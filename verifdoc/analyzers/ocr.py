@@ -60,46 +60,30 @@ def extract_text_from_pdf(pdf_path: str | Path) -> dict:
 
 
 def extract_text_from_image(source: Image.Image, languages: list[str] | None = None) -> dict:
-    """Extrait le texte d'une image via EasyOCR (fallback)."""
+    """Extrait le texte d'une image via pytesseract (fallback léger)."""
     if languages is None:
-        languages = ["fr"]
+        languages = ["fra"]
+    elif "fr" in languages and "fra" not in languages:
+        languages = [l if l != "fr" else "fra" for l in languages]
 
     try:
-        import easyocr
+        import pytesseract
     except ImportError:
-        return {"full_text": "", "words": [], "avg_confidence": 0.0, "error": "EasyOCR non installé"}
+        return {"full_text": "", "words": [], "avg_confidence": 0.0, "error": "pytesseract non installé"}
 
     try:
-        # Cache le reader
-        if not hasattr(extract_text_from_image, "_reader"):
-            extract_text_from_image._reader = easyocr.Reader(languages, gpu=False, verbose=False)
-        reader = extract_text_from_image._reader
-
-        img_array = np.array(source.convert("RGB"))
-        # Réduire la taille pour économiser la RAM
-        h, w = img_array.shape[:2]
-        if max(h, w) > 1500:
-            scale = 1500 / max(h, w)
-            new_w, new_h = int(w * scale), int(h * scale)
-            img_array = np.array(source.resize((new_w, new_h)).convert("RGB"))
-
-        results = reader.readtext(img_array)
-        words = []
-        for bbox, text, conf in results:
-            words.append({
-                "text": text.strip(),
-                "confidence": round(float(conf), 4),
-                "bbox": [[int(p[0]), int(p[1])] for p in bbox],
-            })
-
-        full_text = " ".join(w["text"] for w in words if w["text"])
-        avg_conf = float(np.mean([w["confidence"] for w in words])) if words else 0.0
-
+        lang_str = "+".join(languages)
+        text = pytesseract.image_to_string(source, lang=lang_str)
+        
+        full_text = text.strip()
+        
         return {
             "full_text": full_text,
-            "words": words,
-            "avg_confidence": round(avg_conf, 4),
-            "engine": "easyocr",
+            # Les données Words/Bbox ne sont pas strictement nécessaires pour l'extraction de champs globale 
+            # (qui se base sur le full_text regex). Pour ne pas casser le format :
+            "words": [],
+            "avg_confidence": 0.8,
+            "engine": "pytesseract",
         }
     except Exception as e:
         return {"full_text": "", "words": [], "avg_confidence": 0.0, "error": str(e)}

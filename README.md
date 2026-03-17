@@ -23,7 +23,7 @@ pip install -r requirements.txt
 # Lancer l'API
 uvicorn verifdoc.api.main:app --reload --port 8000
 
-# Lancer le dashboard
+# Lancer le dashboard (UI premium, pipeline parallèle, rapport HTML exportable)
 streamlit run dashboard.py
 
 # Tester
