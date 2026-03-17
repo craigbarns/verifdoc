@@ -487,6 +487,9 @@ with col_doc:
 
 with col_results:
     st.markdown("#### Analyse")
+    st.caption(
+        "Après l’analyse, le **résumé et le détail** s’affichent **sous** Document + Analyse (faites défiler)."
+    )
 
     if st.button("Lancer l’analyse forensique", type="primary", use_container_width=True):
         pdf_path = None
@@ -569,7 +572,7 @@ def _biz_card_class(status: str) -> str:
         return "ok"
     if status in ("invalid", "not_found"):
         return "bad"
-    if status in ("unavailable", "unverifiable", "unknown"):
+    if status in ("unavailable", "unverifiable", "unknown", "warn"):
         return "warn"
     return "neutral"
 
@@ -703,7 +706,12 @@ if "vd_last" in st.session_state:
     ela_img = _b64_to_pil(L.get("ela_b64"))
     noise_img = _b64_to_pil(L.get("noise_b64"))
     cm_img = _b64_to_pil(L.get("cm_b64"))
-    show_lab = ela_img or noise_img or cm_img
+    cm_res = results.get("copy_move") or {}
+    cm_matches = int(cm_res.get("match_count") or 0)
+    cm_sc = float(cm_res.get("score") or 0)
+    cm_meaningful = cm_matches >= 10 or cm_sc >= 0.12
+
+    show_lab = ela_img or noise_img or True
     if show_lab:
         st.markdown(
             '<p class="vd-section-title">Laboratoire visuel</p>',
@@ -717,8 +725,19 @@ if "vd_last" in st.session_state:
             if noise_img:
                 st.image(noise_img, caption="Texture / wavelet")
         with c3:
-            if cm_img:
-                st.image(cm_img, caption="Copy-move")
+            if cm_img and cm_meaningful:
+                st.image(cm_img, caption="Copy-move — zones ressorties")
+            else:
+                st.markdown(
+                    f"""
+<div style="background:#1a1a26;border:1px solid rgba(45,212,191,0.2);border-radius:12px;padding:1.25rem;min-height:120px;">
+<div style="color:#2dd4bf;font-size:0.7rem;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:0.5rem;">Copy-move</div>
+<div style="color:#e8e6e3;font-size:0.92rem;">Aucune zone dupliquée <strong>significative</strong> détectée.</div>
+<div style="color:#8a8793;font-size:0.8rem;margin-top:0.6rem;">Correspondances ORB : {cm_matches} — comportement normal sur une facture sans collage visible.</div>
+</div>
+""",
+                    unsafe_allow_html=True,
+                )
 
     if "metadata" in results and isinstance(results["metadata"].get("metadata"), dict):
         with st.expander("Métadonnées fichier"):

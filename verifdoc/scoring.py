@@ -78,8 +78,21 @@ def _business_verification_summary(cross: dict) -> dict[str, dict]:
             out["siret"] = {"status": "invalid", "label": "Invalide ou introuvable (référentiel)"}
             out["entreprise"] = {"status": "not_found", "label": "Aucune entreprise active associée"}
         elif sv.get("verified") is None:
-            out["siret"] = {"status": "unavailable", "label": "Vérification indisponible (API)"}
-            out["entreprise"] = {"status": "unknown", "label": "Non vérifiable pour l’instant"}
+            luhn_invalid = any(
+                f.get("type") == "siret_invalide" for f in cross.get("flags", [])
+            )
+            if luhn_invalid:
+                out["siret"] = {
+                    "status": "invalid",
+                    "label": "Clé de contrôle SIRET invalide (Luhn) — registre non joignable",
+                }
+                out["entreprise"] = {
+                    "status": "warn",
+                    "label": "Exiger un justificatif ou un autre SIRET avant validation",
+                }
+            else:
+                out["siret"] = {"status": "unavailable", "label": "Vérification registre indisponible (API)"}
+                out["entreprise"] = {"status": "unknown", "label": "Non vérifiable pour l’instant"}
         else:
             out["siret"] = {"status": "unknown", "label": "État de vérification inconnu"}
     else:
@@ -181,6 +194,30 @@ def compute_final_score(results: dict[str, dict]) -> dict:
             if verdict == "clean":
                 verdict = "suspect"
                 final_score = max(final_score, 0.20)
+
+    # Alerte métier majeure → au minimum Risque modéré (cohérent avec le résumé exécutif)
+    _critical_business = {
+        "siret_invalide",
+        "siret_non_verifie",
+        "iban_invalide",
+        "ttc_incoherent",
+        "taux_tva_incoherent",
+        "cle_rib_invalide",
+        "ratio_impossible",
+        "tva_invalide",
+        "solde_incoherent",
+        "total_incoherent",
+    }
+    cross_flags = results.get("cross_check", {}).get("flags") or []
+    if any(
+        f.get("severity") == "high" and f.get("type") in _critical_business
+        for f in cross_flags
+    ):
+        if verdict == "clean":
+            verdict = "suspect"
+            final_score = max(final_score, 0.24)
+        elif verdict == "suspect":
+            final_score = max(final_score, 0.26)
 
     rc = RISK_COPY[verdict]
     risk_title = rc["title"]
