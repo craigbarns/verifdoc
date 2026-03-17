@@ -68,11 +68,15 @@ with st.sidebar:
 
     doc_type = st.selectbox(
         "Type de document",
-        ["auto", "bulletin_paie", "avis_imposition"],
+        ["auto", "bulletin_paie", "avis_imposition", "facture", "rib", "releve_bancaire", "quittance_loyer"],
         format_func=lambda x: {
             "auto": "🔄 Détection automatique",
             "bulletin_paie": "📄 Bulletin de paie",
             "avis_imposition": "📋 Avis d'imposition",
+            "facture": "🧾 Facture",
+            "rib": "🏦 RIB",
+            "releve_bancaire": "📊 Relevé bancaire",
+            "quittance_loyer": "🏠 Quittance de loyer",
         }.get(x, x),
     )
 

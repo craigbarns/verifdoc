@@ -67,7 +67,7 @@ async def health():
 @app.post("/api/v1/analyze")
 async def analyze_full(
     file: UploadFile = File(...),
-    doc_type: str = Query("auto", description="Type de document: auto, bulletin_paie, avis_imposition"),
+    doc_type: str = Query("auto", description="Type: auto, bulletin_paie, avis_imposition, facture, rib, releve_bancaire, quittance_loyer"),
     run_ocr: bool = Query(True, description="Activer OCR + validation croisée"),
 ):
     """Analyse complète d'un document (5 couches).
