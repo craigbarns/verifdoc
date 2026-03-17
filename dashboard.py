@@ -436,7 +436,27 @@ if uploaded_file is None:
     )
     st.stop()
 
+# Streamlit : après le 1er read(), le buffer est en fin de fichier. Au clic « Analyser »,
+# un rerun faisait read() → 0 octet → échec silencieux / écran vide.
+try:
+    uploaded_file.seek(0)
+except Exception:
+    pass
 file_bytes = uploaded_file.read()
+_upload_key = f"{uploaded_file.name}_{getattr(uploaded_file, 'size', 0)}"
+if len(file_bytes) == 0:
+    cached = st.session_state.get("vd_upload_bytes")
+    if isinstance(cached, dict) and cached.get("key") == _upload_key:
+        file_bytes = cached.get("data") or b""
+elif len(file_bytes) > 0:
+    st.session_state["vd_upload_bytes"] = {"key": _upload_key, "data": file_bytes}
+
+if len(file_bytes) == 0:
+    st.error(
+        "Fichier vide ou non relu. **Sélectionnez à nouveau le fichier** puis lancez l’analyse."
+    )
+    st.stop()
+
 file_ext = Path(uploaded_file.name).suffix.lower()
 
 col_doc, col_results = st.columns([1, 1])
@@ -569,9 +589,11 @@ if "vd_last" in st.session_state:
 
     ring_pct = min(100, max(0, float(score_pct)))
 
+    # Couleurs en hex (les var() CSS ne s’appliquent pas toujours dans les blocs markdown Streamlit)
+    _t, _m, _a = "#e8e6e3", "#a8a4b0", "#2dd4bf"
     st.markdown(
         f"""
-<div class="vd-exec-summary">
+<div class="vd-exec-summary" style="color:{_t};">
   <span class="label">Résumé exécutif</span>
   <strong>Type de document détecté</strong> — {html_lib.escape(doc_lbl)}<br/>
   <strong>Niveau de risque</strong> — {html_lib.escape(risk_title)}<br/>
@@ -587,15 +609,15 @@ if "vd_last" in st.session_state:
 <div class="vd-verdict-box {verdict}">
   <div class="vd-ring-wrap">
     <div style="width:140px;height:140px;border-radius:50%;margin:0 auto;background:conic-gradient(#f87171 0% {ring_pct:.1f}%, #1a1a26 0);display:flex;align-items:center;justify-content:center;">
-      <div style="width:102px;height:102px;border-radius:50%;background:#12121a;display:flex;align-items:center;justify-content:center;font-family:Outfit,sans-serif;font-weight:800;font-size:1.5rem;color:#e8e6e3;">{score_pct:.0f}%</div>
+      <div style="width:102px;height:102px;border-radius:50%;background:#12121a;display:flex;align-items:center;justify-content:center;font-family:Outfit,sans-serif;font-weight:800;font-size:1.5rem;color:{_t};">{score_pct:.0f}%</div>
     </div>
   </div>
-  <h2 style="margin:0.5rem 0 0.25rem; font-size:1.85rem !important;">{html_lib.escape(risk_title)}</h2>
-  <p style="color:var(--accent); margin:0 0 0.75rem; font-size:1.05rem; font-weight:500;">{html_lib.escape(risk_next)}</p>
-  <p style="max-width:520px; margin:0 auto; color:var(--muted); font-size:0.95rem;">{html_lib.escape(final.get("recommendation", ""))}</p>
-  <p style="font-size:0.8rem; color:var(--muted); margin-top:1rem;">{html_lib.escape(L["filename"])} · {L["elapsed"]}s</p>
+  <h2 style="margin:0.5rem 0 0.25rem; font-size:1.85rem !important; color:{_t} !important;">{html_lib.escape(risk_title)}</h2>
+  <p style="color:{_a}; margin:0 0 0.75rem; font-size:1.05rem; font-weight:500;">{html_lib.escape(risk_next)}</p>
+  <p style="max-width:520px; margin:0 auto; color:{_m}; font-size:0.95rem;">{html_lib.escape(final.get("recommendation", ""))}</p>
+  <p style="font-size:0.8rem; color:{_m}; margin-top:1rem;">{html_lib.escape(L["filename"])} · {L["elapsed"]}s</p>
 </div>
-<div class="vd-disclaimer">{html_lib.escape(final.get("disclaimer", ""))}</div>
+<div class="vd-disclaimer" style="color:{_m};">{html_lib.escape(final.get("disclaimer", ""))}</div>
 """,
         unsafe_allow_html=True,
     )
@@ -652,10 +674,10 @@ if "vd_last" in st.session_state:
     pills = ""
     for layer in final.get("layers", []):
         v = layer.get("verdict", "")
-        col = "var(--ok)" if v == "clean" else ("var(--warn)" if v == "suspect" else "var(--danger)")
         sc = f"{layer['score'] * 100:.0f}%" if layer.get("score") is not None else "—"
         name = LAYER_LABELS.get(layer["layer"], layer["layer"])
-        pills += f'<span class="vd-layer-pill" style="border-left:3px solid {col};"><strong>{html_lib.escape(name)}</strong> {sc}</span>'
+        _col = "#4ade80" if v == "clean" else ("#fbbf24" if v == "suspect" else "#f87171")
+        pills += f'<span class="vd-layer-pill" style="border-left:3px solid {_col};color:#e8e6e3;"><strong>{html_lib.escape(name)}</strong> {sc}</span>'
     st.markdown(f'<div style="margin:1rem 0;">{pills}</div>', unsafe_allow_html=True)
 
     cross = results.get("cross_check", {})
