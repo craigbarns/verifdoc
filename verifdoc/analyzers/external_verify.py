@@ -47,74 +47,90 @@ def verify_siret_online(siret: str) -> dict:
 
     siren = clean[:9]
 
-    try:
-        url = f"https://recherche-entreprises.api.gouv.fr/search?q={siren}&page=1&per_page=1"
-        req = Request(url, headers={"User-Agent": "VerifDoc/1.0"})
-        with urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except (URLError, HTTPError, TimeoutError) as e:
+    # Essayer d'abord l'API Annuaire des Entreprises (lookup direct par SIRET)
+    apis = [
+        f"https://annuaire-entreprises.data.gouv.fr/api/etablissement/{clean}",
+        f"https://recherche-entreprises.api.gouv.fr/search?q={siren}&page=1&per_page=1",
+    ]
+
+    data = None
+    api_used = None
+    for url in apis:
+        try:
+            req = Request(url, headers={"User-Agent": "VerifDoc/1.0"})
+            with urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                api_used = url.split("/")[2]
+                break
+        except Exception:
+            continue
+
+    if data is None:
         return {
             "verified": None,
-            "detail": f"API indisponible — {str(e)[:80]}",
-            "source": "api_recherche_entreprises",
-        }
-    except Exception as e:
-        return {
-            "verified": None,
-            "detail": f"Erreur — {str(e)[:80]}",
-            "source": "api_recherche_entreprises",
+            "detail": "APIs indisponibles — vérification impossible",
+            "source": "api_gouv",
         }
 
-    results = data.get("results", [])
+    # ── Parser la réponse ──────────────────────────────────────────────
+    # L'API Annuaire retourne directement l'établissement
+    # L'API Recherche retourne une liste de résultats
 
-    if not results:
+    nom = None
+    full_address = None
+    is_active = False
+    siret_found = False
+
+    if "etablissement" in data:
+        # Format API Annuaire
+        etab = data["etablissement"]
+        nom = etab.get("unite_legale", {}).get("nom_complet", "")
+        adresse = etab.get("adresse", "")
+        etat = etab.get("etat_administratif", "A")
+        is_active = etat == "A"
+        siret_found = True
+        full_address = adresse if isinstance(adresse, str) else ""
+
+    elif "results" in data:
+        # Format API Recherche
+        results = data.get("results", [])
+        if results:
+            company = results[0]
+            nom = company.get("nom_complet", "")
+            siege = company.get("siege", {})
+            code_postal = siege.get("code_postal", "")
+            commune = siege.get("libelle_commune", "")
+            adresse = siege.get("adresse", "")
+            full_address = f"{adresse} {code_postal} {commune}".strip()
+            etat = company.get("etat_administratif", "A")
+            is_active = etat == "A"
+
+            # Vérifier si le SIRET existe
+            for etab in company.get("matching_etablissements", []):
+                if etab.get("siret") == clean:
+                    siret_found = True
+                    break
+            if not siret_found and siege.get("siret") == clean:
+                siret_found = True
+        else:
+            return {
+                "verified": False,
+                "detail": f"SIRET {clean} introuvable dans le répertoire Sirene",
+                "source": api_used,
+            }
+    else:
         return {
             "verified": False,
-            "detail": f"SIRET {clean} introuvable dans le répertoire Sirene",
-            "source": "api_recherche_entreprises",
-            "company_name": None,
-            "address": None,
-            "status": None,
+            "detail": f"SIRET {clean} introuvable",
+            "source": api_used,
         }
 
-    company = results[0]
-    nom = company.get("nom_complet", "") or company.get("nom_raison_sociale", "")
-    siege = company.get("siege", {})
-    adresse = siege.get("adresse", "") or ""
-    code_postal = siege.get("code_postal", "")
-    commune = siege.get("libelle_commune", "")
-
-    # Vérifier si le SIRET spécifique existe dans les établissements
-    siret_found = False
-    etablissement_status = None
-    matching_etablissements = company.get("matching_etablissements", [])
-
-    for etab in matching_etablissements:
-        if etab.get("siret") == clean:
-            siret_found = True
-            etablissement_status = etab.get("etat_administratif", "")
-            break
-
-    # Si pas trouvé dans matching, vérifier le siège
-    if not siret_found and siege.get("siret") == clean:
-        siret_found = True
-        etablissement_status = siege.get("etat_administratif", "")
-
-    # Statut de l'unité légale
-    etat = company.get("etat_administratif", "A")
-    is_active = etat == "A"
-
-    if siret_found:
-        if is_active and etablissement_status in ("A", None, ""):
-            status_detail = "✅ Entreprise active"
-        elif etablissement_status == "F":
-            status_detail = "⚠️ Établissement fermé"
-        else:
-            status_detail = "⚠️ Entreprise cessée"
+    if siret_found and is_active:
+        status_detail = "✅ Entreprise active"
+    elif siret_found:
+        status_detail = "⚠️ Établissement fermé"
     else:
-        status_detail = "⚠️ SIREN trouvé mais SIRET spécifique non confirmé"
-
-    full_address = f"{adresse} {code_postal} {commune}".strip()
+        status_detail = "⚠️ SIREN trouvé mais SIRET non confirmé"
 
     return {
         "verified": True if siret_found and is_active else False,
@@ -123,9 +139,8 @@ def verify_siret_online(siret: str) -> dict:
         "siret": clean,
         "address": full_address if full_address else None,
         "status": status_detail,
-        "etat_administratif": etat,
         "detail": f"{'✅' if siret_found and is_active else '⚠️'} {nom} — {status_detail}",
-        "source": "api_recherche_entreprises",
+        "source": api_used,
     }
 
 
