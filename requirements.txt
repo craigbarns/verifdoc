@@ -13,8 +13,8 @@ PyWavelets>=1.5.0
 # PDF handling
 PyMuPDF>=1.23.0
 
-# OCR
-easyocr>=1.7.1
+# OCR (optional - for scanned images only, PyMuPDF handles PDF text)
+# easyocr>=1.7.1
 
 # Dashboard
 streamlit>=1.28.0

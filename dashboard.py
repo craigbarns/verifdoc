@@ -222,7 +222,7 @@ if uploaded_file is not None:
                 progress.progress(85, text="📝 Couche 5/5 — OCR + validation...")
                 try:
                     from verifdoc.analyzers import ocr as ocr_module, cross_check
-                    ocr_result = ocr_module.extract_text(image)
+                    ocr_result = ocr_module.extract_text(image, pdf_path=pdf_path if file_ext == ".pdf" else None)
                     results["cross_check"] = cross_check.analyze(ocr_result, doc_type=doc_type)
                 except Exception as e:
                     results["cross_check"] = {"score": None, "error": str(e)}

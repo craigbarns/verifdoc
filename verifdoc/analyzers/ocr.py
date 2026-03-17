@@ -1,8 +1,9 @@
 """
 Extraction OCR — Couche 5a du pipeline VerifDoc.
 
-Extrait le texte des documents pour permettre la validation croisée.
-Utilise EasyOCR (multi-langue, support français natif).
+Stratégie d'extraction :
+  1. PDF natif → PyMuPDF (instantané, 0 RAM supplémentaire)
+  2. Image scannée → EasyOCR (fallback, plus lent)
 
 Types supportés :
   - Bulletin de paie
@@ -22,72 +23,113 @@ from typing import Optional
 import numpy as np
 from PIL import Image
 
-# Cache global pour le reader EasyOCR (lourd à charger)
-_reader_cache: dict = {}
+
+def extract_text_from_pdf(pdf_path: str | Path) -> dict:
+    """Extrait le texte d'un PDF natif via PyMuPDF (ultra rapide)."""
+    try:
+        import fitz
+    except ImportError:
+        return {"full_text": "", "words": [], "avg_confidence": 0.0, "error": "PyMuPDF non installé"}
+
+    try:
+        doc = fitz.open(str(pdf_path))
+        full_text = ""
+        words = []
+        for page in doc:
+            full_text += page.get_text() + "\n"
+            for w in page.get_text("words"):
+                words.append({
+                    "text": w[4].strip(),
+                    "confidence": 0.99,
+                    "bbox": [[int(w[0]), int(w[1])], [int(w[2]), int(w[1])],
+                             [int(w[2]), int(w[3])], [int(w[0]), int(w[3])]],
+                })
+        doc.close()
+
+        if full_text.strip():
+            return {
+                "full_text": full_text.strip(),
+                "words": words,
+                "avg_confidence": 0.99,
+                "engine": "pymupdf",
+            }
+    except Exception:
+        pass
+
+    return {"full_text": "", "words": [], "avg_confidence": 0.0}
 
 
-def _get_reader(languages: list[str], gpu: bool = False):
-    """Charge ou récupère le reader EasyOCR depuis le cache."""
+def extract_text_from_image(source: Image.Image, languages: list[str] | None = None) -> dict:
+    """Extrait le texte d'une image via EasyOCR (fallback)."""
+    if languages is None:
+        languages = ["fr"]
+
     try:
         import easyocr
     except ImportError:
-        return None
+        return {"full_text": "", "words": [], "avg_confidence": 0.0, "error": "EasyOCR non installé"}
 
-    key = (tuple(languages), gpu)
-    if key not in _reader_cache:
-        _reader_cache[key] = easyocr.Reader(languages, gpu=gpu, verbose=False)
-    return _reader_cache[key]
+    try:
+        # Cache le reader
+        if not hasattr(extract_text_from_image, "_reader"):
+            extract_text_from_image._reader = easyocr.Reader(languages, gpu=False, verbose=False)
+        reader = extract_text_from_image._reader
+
+        img_array = np.array(source.convert("RGB"))
+        # Réduire la taille pour économiser la RAM
+        h, w = img_array.shape[:2]
+        if max(h, w) > 1500:
+            scale = 1500 / max(h, w)
+            new_w, new_h = int(w * scale), int(h * scale)
+            img_array = np.array(source.resize((new_w, new_h)).convert("RGB"))
+
+        results = reader.readtext(img_array)
+        words = []
+        for bbox, text, conf in results:
+            words.append({
+                "text": text.strip(),
+                "confidence": round(float(conf), 4),
+                "bbox": [[int(p[0]), int(p[1])] for p in bbox],
+            })
+
+        full_text = " ".join(w["text"] for w in words if w["text"])
+        avg_conf = float(np.mean([w["confidence"] for w in words])) if words else 0.0
+
+        return {
+            "full_text": full_text,
+            "words": words,
+            "avg_confidence": round(avg_conf, 4),
+            "engine": "easyocr",
+        }
+    except Exception as e:
+        return {"full_text": "", "words": [], "avg_confidence": 0.0, "error": str(e)}
 
 
 def extract_text(
     source: str | Path | Image.Image,
     languages: list[str] | None = None,
     gpu: bool = False,
+    pdf_path: str | Path | None = None,
 ) -> dict:
-    """Extrait le texte d'un document image."""
-    if languages is None:
-        languages = ["fr", "en"]
+    """Point d'entrée principal — choisit la meilleure méthode.
 
-    reader = _get_reader(languages, gpu)
-    if reader is None:
-        return {
-            "full_text": "",
-            "words": [],
-            "avg_confidence": 0.0,
-            "error": "EasyOCR non installé — pip install easyocr",
-        }
+    1. Si pdf_path fourni → extraction PyMuPDF (instantanée)
+    2. Sinon → EasyOCR sur l'image
+    """
+    # Essayer PyMuPDF d'abord si on a un PDF
+    if pdf_path:
+        result = extract_text_from_pdf(pdf_path)
+        if result["full_text"]:
+            return result
 
+    # Fallback : EasyOCR sur l'image
     if isinstance(source, Image.Image):
-        img_array = np.array(source.convert("RGB"))
-    else:
-        img_array = str(source)
+        return extract_text_from_image(source, languages)
+    elif isinstance(source, (str, Path)):
+        img = Image.open(str(source)).convert("RGB")
+        return extract_text_from_image(img, languages)
 
-    try:
-        results = reader.readtext(img_array)
-    except Exception as e:
-        return {
-            "full_text": "",
-            "words": [],
-            "avg_confidence": 0.0,
-            "error": str(e),
-        }
-
-    words = []
-    for bbox, text, conf in results:
-        words.append({
-            "text": text.strip(),
-            "confidence": round(float(conf), 4),
-            "bbox": [[int(p[0]), int(p[1])] for p in bbox],
-        })
-
-    full_text = " ".join(w["text"] for w in words if w["text"])
-    avg_conf = float(np.mean([w["confidence"] for w in words])) if words else 0.0
-
-    return {
-        "full_text": full_text,
-        "words": words,
-        "avg_confidence": round(avg_conf, 4),
-    }
+    return {"full_text": "", "words": [], "avg_confidence": 0.0, "error": "Source non supportée"}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
