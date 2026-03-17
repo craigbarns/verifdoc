@@ -500,18 +500,31 @@ def analyze(ocr_result: dict, doc_type: str = "auto") -> dict:
         ext = verify_all(fields)
         result["external_verifications"] = ext.get("verifications", {})
 
-        # Ajouter les flags externes (seulement les erreurs, pas les "info")
+        # Si l'API gouv.fr confirme le SIRET, retirer le flag Luhn
+        siret_ext = ext.get("verifications", {}).get("siret", {})
+        if siret_ext.get("verified") is True:
+            result["flags"] = [
+                f for f in result["flags"]
+                if f.get("type") != "siret_invalide"
+            ]
+            # Recalculer le score sans le flag SIRET
+            score_recalc = 0.0
+            for f in result["flags"]:
+                if f["severity"] == "high":
+                    score_recalc += 0.35
+                elif f["severity"] == "medium":
+                    score_recalc += 0.15
+            result["score"] = round(min(1.0, score_recalc), 4)
+
+        # Ajouter les flags externes
         for flag in ext.get("flags", []):
             if flag["severity"] != "info":
                 result["flags"].append(flag)
-                result["score"] = min(1.0, result["score"] + ext["score"])
+                result["score"] = round(min(1.0, result["score"] + 0.30), 4)
             else:
-                # Ajouter les vérifications réussies pour l'affichage
                 result["flags"].append(flag)
 
-        result["score"] = round(min(1.0, result["score"]), 4)
-
-        # Recalculer le verdict avec le nouveau score
+        # Recalculer le verdict
         if result["score"] < 0.15:
             result["verdict"] = "clean"
         elif result["score"] < 0.40:
@@ -519,16 +532,17 @@ def analyze(ocr_result: dict, doc_type: str = "auto") -> dict:
         else:
             result["verdict"] = "forged"
 
-        if result["flags"]:
-            error_flags = [f for f in result["flags"] if f["severity"] != "info"]
-            if not error_flags:
-                result["detail"] = "Données vérifiées — document cohérent"
-            elif result["verdict"] == "forged":
-                result["detail"] = f"{len(error_flags)} incohérence(s) majeure(s)"
-            else:
-                result["detail"] = f"{len(error_flags)} anomalie(s) détectée(s)"
+        # Mettre à jour le détail
+        error_flags = [f for f in result["flags"] if f["severity"] not in ("info",)]
+        if not error_flags:
+            result["detail"] = "✅ Données vérifiées — document cohérent"
+        elif result["verdict"] == "forged":
+            result["detail"] = f"{len(error_flags)} incohérence(s) majeure(s)"
+        elif result["verdict"] == "suspect":
+            result["detail"] = f"{len(error_flags)} anomalie(s) détectée(s)"
+        else:
+            result["detail"] = "Données du document cohérentes"
     except Exception:
-        # Si la vérification externe échoue, on continue sans
         pass
 
     return result

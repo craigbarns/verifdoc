@@ -163,21 +163,28 @@ def _find_siret(text: str) -> str | None:
 
 def _find_iban(text: str) -> str | None:
     """Cherche un IBAN dans le texte."""
+    text_upper = text.upper()
+
+    # Chercher après le mot IBAN
     match = re.search(
-        r'\b([A-Z]{2}\d{2}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{3})\b',
-        text.upper(),
+        r'IBAN\s*[:\s]*([A-Z]{2}\s*\d[\d\s]{10,35})',
+        text_upper,
     )
     if match:
-        return match.group(1).replace(" ", "")
-    # Format FR plus souple
-    match = re.search(
-        r'(?:IBAN|iban)\s*[:\s]*([A-Z]{2}\d[\d\s]{20,30})',
-        text.upper(),
-    )
-    if match:
-        clean = match.group(1).replace(" ", "")
+        clean = re.sub(r'[^A-Z0-9]', '', match.group(1))
         if 15 <= len(clean) <= 34:
             return clean
+
+    # Fallback : chercher un pattern FR + chiffres
+    match = re.search(
+        r'\b(FR\s*\d[\d\s]{20,30})\b',
+        text_upper,
+    )
+    if match:
+        clean = re.sub(r'[^A-Z0-9]', '', match.group(1))
+        if 15 <= len(clean) <= 34:
+            return clean
+
     return None
 
 
