@@ -280,6 +280,69 @@ if uploaded_file is not None:
                     unsafe_allow_html=True,
                 )
 
+            # ── Détail de la validation croisée ──────────────────────────
+            cross = results.get("cross_check", {})
+
+            # Afficher les champs extraits
+            extracted = cross.get("fields_extracted", {})
+            if extracted:
+                with st.expander("📝 Champs extraits du document"):
+                    for key, val in extracted.items():
+                        st.markdown(f"**{key}** : `{val}`")
+
+            # Afficher les flags détaillés
+            flags = cross.get("flags", [])
+            if flags:
+                with st.expander(f"🔍 Détail des vérifications ({len(flags)} résultat(s))", expanded=True):
+                    for flag in flags:
+                        sev = flag.get("severity", "medium")
+                        if sev == "high":
+                            sev_icon = "🚨"
+                        elif sev == "medium":
+                            sev_icon = "⚠️"
+                        elif sev == "info":
+                            sev_icon = "✅"
+                        else:
+                            sev_icon = "ℹ️"
+                        st.markdown(f"{sev_icon} **{flag.get('type', '')}** — {flag.get('detail', '')}")
+
+            # Afficher les vérifications externes
+            ext_verifs = cross.get("external_verifications", {})
+            if ext_verifs:
+                with st.expander("🌐 Vérifications externes (API gouv.fr)"):
+                    for key, verif in ext_verifs.items():
+                        if key == "siret":
+                            verified = verif.get("verified")
+                            icon_v = "✅" if verified else ("⚠️" if verified is None else "🚨")
+                            st.markdown(f"{icon_v} **SIRET** : {verif.get('detail', '')}")
+                            if verif.get("company_name"):
+                                st.markdown(f"   🏢 **Entreprise** : {verif['company_name']}")
+                            if verif.get("address"):
+                                st.markdown(f"   📍 **Adresse** : {verif['address']}")
+                            if verif.get("status"):
+                                st.markdown(f"   📋 **Statut** : {verif['status']}")
+                        elif key == "iban":
+                            valid = verif.get("valid", False)
+                            icon_v = "✅" if valid else "🚨"
+                            st.markdown(f"{icon_v} **IBAN** : {verif.get('detail', '')}")
+                        elif key == "tva":
+                            valid = verif.get("valid", False)
+                            icon_v = "✅" if valid else "🚨"
+                            st.markdown(f"{icon_v} **TVA Intracommunautaire** : {verif.get('detail', '')}")
+
+            # Type de document détecté
+            doc_detected = cross.get("doc_type")
+            if doc_detected and doc_detected != "unknown":
+                doc_labels = {
+                    "facture": "🧾 Facture",
+                    "bulletin_paie": "📄 Bulletin de paie",
+                    "avis_imposition": "📋 Avis d'imposition",
+                    "rib": "🏦 RIB",
+                    "releve_bancaire": "📊 Relevé bancaire",
+                    "quittance_loyer": "🏠 Quittance de loyer",
+                }
+                st.markdown(f"**Type détecté** : {doc_labels.get(doc_detected, doc_detected)}")
+
             # Images forensiques
             if ela_img or noise_heatmap or cm_mask is not None:
                 st.markdown("#### 🖼️ Visualisations forensiques")
