@@ -59,6 +59,16 @@ def _b64_to_pil(b64: str | None):
     return Image.open(io.BytesIO(base64.b64decode(b64)))
 
 
+def _biz_card_class(status: str) -> str:
+    if status in ("ok", "found"):
+        return "ok"
+    if status in ("invalid", "not_found"):
+        return "bad"
+    if status in ("unavailable", "unverifiable", "unknown", "warn"):
+        return "warn"
+    return "neutral"
+
+
 def _build_html_report(
     filename: str,
     final: dict,
@@ -353,6 +363,24 @@ st.markdown(
     .stButton > button:hover { box-shadow: 0 0 24px rgba(45, 212, 191, 0.35); }
     footer { visibility: hidden; }
     #MainMenu { visibility: hidden; }
+    .vd-results-separator {
+      margin: 2.25rem auto 0.5rem;
+      max-width: 920px;
+      border: 0;
+      border-top: 1px solid rgba(45, 212, 191, 0.28);
+    }
+    .vd-results-header {
+      text-align: center;
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.72rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: #2dd4bf;
+      margin: 0.5rem 0 1.25rem;
+    }
+    div[data-testid="column"] {
+      vertical-align: top;
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -459,7 +487,7 @@ if len(file_bytes) == 0:
 
 file_ext = Path(uploaded_file.name).suffix.lower()
 
-col_doc, col_results = st.columns([1, 1])
+col_doc, col_results = st.columns([1.15, 0.85])
 
 with col_doc:
     st.markdown("#### Document")
@@ -488,7 +516,7 @@ with col_doc:
 with col_results:
     st.markdown("#### Analyse")
     st.caption(
-        "Après l’analyse, le **résumé et le détail** s’affichent **sous** Document + Analyse (faites défiler)."
+        "Le résumé s’affiche **en pleine largeur sous cette ligne** (section « Résultats »)."
     )
 
     if st.button("Lancer l’analyse forensique", type="primary", use_container_width=True):
@@ -567,18 +595,24 @@ with col_results:
         )
         st.session_state.vd_history = st.session_state.vd_history[:35]
 
-def _biz_card_class(status: str) -> str:
-    if status in ("ok", "found"):
-        return "ok"
-    if status in ("invalid", "not_found"):
-        return "bad"
-    if status in ("unavailable", "unverifiable", "unknown", "warn"):
-        return "warn"
-    return "neutral"
+st.markdown('<hr class="vd-results-separator"/>', unsafe_allow_html=True)
 
+if "vd_last" not in st.session_state:
+    st.markdown(
+        '<p class="vd-results-header">Zone résultats</p>',
+        unsafe_allow_html=True,
+    )
+    st.info(
+        "↑ **Document** à gauche · **Lancer l’analyse** à droite — puis le **résumé exécutif**, "
+        "les cartes métier et le laboratoire visuel apparaissent **ici**, centrés."
+    )
 
 # Affichage résultat persistant
 if "vd_last" in st.session_state:
+    st.markdown(
+        '<p class="vd-results-header">Résultats d’analyse</p>',
+        unsafe_allow_html=True,
+    )
     L = st.session_state["vd_last"]
     final = L["final"]
     results = L["results"]

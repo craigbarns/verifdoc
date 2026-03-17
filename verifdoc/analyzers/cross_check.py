@@ -129,10 +129,55 @@ def _make_result(analyzer: str, score: float, flags: list) -> dict:
     }
 
 
-def validate_bulletin_paie(fields: dict) -> dict:
-    """Valide un bulletin de paie."""
+def validate_bulletin_paie(fields: dict, ocr_text: str = "") -> dict:
+    """Valide un bulletin de paie (exige une traçabilité minimale)."""
     flags = []
     score = 0.0
+    tu = (ocr_text or "").upper()
+
+    has_siret = bool(fields.get("siret"))
+    has_net = fields.get("net_a_payer") is not None
+    has_brut = fields.get("salaire_brut") is not None
+    n_ok = sum([has_siret, has_net, has_brut])
+
+    markers = [
+        "BULLETIN DE PAIE", "BULLETIN DE SALAIRE", "FICHE DE PAIE", "FICHE PAIE",
+        "BULLETIN PAIE", "NET A PAYER", "NET À PAYER", "SALAIRE BRUT",
+        "COTISATION", "URSSAF", "BASE BRUTE",
+    ]
+    hits = sum(1 for m in markers if m in tu)
+    looks_pay = hits >= 2 or ("PAIE" in tu and "BRUT" in tu and "NET" in tu)
+
+    if looks_pay:
+        if n_ok == 0:
+            flags.append({
+                "type": "bulletin_non_verifiable",
+                "severity": "high",
+                "detail": "Document type bulletin mais SIRET, brut et net non exploitables — "
+                "ne pas valider (falsification ou scan illisible probable).",
+            })
+            score += 0.72
+        elif n_ok == 1:
+            flags.append({
+                "type": "bulletin_incomplet",
+                "severity": "high",
+                "detail": "Un seul champ chiffré extrait — insuffisant pour accepter un bulletin de paie.",
+            })
+            score += 0.48
+        elif n_ok == 2:
+            flags.append({
+                "type": "bulletin_partiel",
+                "severity": "medium",
+                "detail": "Données partielles : exiger bulletin PDF employeur ou original.",
+            })
+            score += 0.30
+    elif len(tu.strip()) < 120 and n_ok < 2:
+        flags.append({
+            "type": "bulletin_peu_extractible",
+            "severity": "high",
+            "detail": "Peu de texte exploitable pour un bulletin — OCR insuffisant, revue manuelle obligatoire.",
+        })
+        score += 0.50
 
     brut = fields.get("salaire_brut")
     net = fields.get("net_a_payer")
@@ -458,7 +503,14 @@ def detect_doc_type(text: str) -> str:
     if not scores:
         return "unknown"
 
-    # Retourner le type avec le plus de mots-clés trouvés
+    # Bulletins souvent mal classés « facture » si le faux doc mélange les libellés
+    bp = scores.get("bulletin_paie", 0)
+    if ("NET A PAYER" in text_upper or "NET À PAYER" in text_upper) and "BRUT" in text_upper:
+        if bp >= 1 or "BULLETIN" in text_upper or "PAIE" in text_upper or "COTISATION" in text_upper:
+            return "bulletin_paie"
+    if bp >= 3:
+        return "bulletin_paie"
+
     return max(scores, key=scores.get)
 
 
@@ -480,18 +532,25 @@ def analyze(ocr_result: dict, doc_type: str = "auto") -> dict:
     if doc_type == "unknown" or doc_type not in DOC_HANDLERS:
         return {
             "analyzer": "cross_check",
-            "score": 0.0,
-            "verdict": "unknown",
-            "detail": "Type de document non reconnu — validation croisée non applicable",
-            "doc_type": doc_type,
+            "score": 0.38,
+            "verdict": "suspect",
+            "detail": "Type non identifié — aucune règle métier appliquée, ne pas considérer comme contrôlé",
+            "doc_type": "unknown",
             "fields_extracted": {},
-            "flags": [],
+            "flags": [{
+                "type": "type_document_inconnu",
+                "severity": "high",
+                "detail": "Impossible de classifier le document — risque de faux bulletin / faux justificatif.",
+            }],
         }
 
     extractor_name, validator = DOC_HANDLERS[doc_type]
     extractor = getattr(ocr_module, extractor_name)
     fields = extractor(ocr_result)
-    result = validator(fields)
+    if doc_type == "bulletin_paie":
+        result = validate_bulletin_paie(fields, text)
+    else:
+        result = validator(fields)
     result["doc_type"] = doc_type
 
     # ── Vérifications externes (SIRET, IBAN, TVA) ────────────────────────

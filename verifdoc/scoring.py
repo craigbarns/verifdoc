@@ -207,6 +207,10 @@ def compute_final_score(results: dict[str, dict]) -> dict:
         "tva_invalide",
         "solde_incoherent",
         "total_incoherent",
+        "bulletin_non_verifiable",
+        "bulletin_incomplet",
+        "bulletin_peu_extractible",
+        "type_document_inconnu",
     }
     cross_flags = results.get("cross_check", {}).get("flags") or []
     if any(
