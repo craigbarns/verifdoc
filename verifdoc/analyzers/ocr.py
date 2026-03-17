@@ -337,6 +337,16 @@ def extract_fields_facture(ocr_result: dict) -> dict:
     if iban:
         fields["iban"] = iban
 
+    # TVA intracommunautaire
+    tva_intra_match = re.search(r'(?:TVA|N[°O]?\s*TVA)\s*(?:INTRA\s*(?:COMMUNAUTAIRE)?|INTRACOMMUNAUTAIRE)\s*[:\s]*(FR\s?\d{2}\s?\d{9})', text_upper)
+    if tva_intra_match:
+        fields["tva_intra"] = tva_intra_match.group(1).replace(" ", "")
+    else:
+        # Fallback : chercher FR + 11 chiffres
+        tva_match = re.search(r'\b(FR\s?\d{2}\s?\d{9})\b', text_upper)
+        if tva_match:
+            fields["tva_intra"] = tva_match.group(1).replace(" ", "")
+
     return fields
 
 

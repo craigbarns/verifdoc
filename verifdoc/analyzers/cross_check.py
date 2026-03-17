@@ -493,4 +493,42 @@ def analyze(ocr_result: dict, doc_type: str = "auto") -> dict:
     fields = extractor(ocr_result)
     result = validator(fields)
     result["doc_type"] = doc_type
+
+    # ── Vérifications externes (SIRET, IBAN, TVA) ────────────────────────
+    try:
+        from .external_verify import verify_all
+        ext = verify_all(fields)
+        result["external_verifications"] = ext.get("verifications", {})
+
+        # Ajouter les flags externes (seulement les erreurs, pas les "info")
+        for flag in ext.get("flags", []):
+            if flag["severity"] != "info":
+                result["flags"].append(flag)
+                result["score"] = min(1.0, result["score"] + ext["score"])
+            else:
+                # Ajouter les vérifications réussies pour l'affichage
+                result["flags"].append(flag)
+
+        result["score"] = round(min(1.0, result["score"]), 4)
+
+        # Recalculer le verdict avec le nouveau score
+        if result["score"] < 0.15:
+            result["verdict"] = "clean"
+        elif result["score"] < 0.40:
+            result["verdict"] = "suspect"
+        else:
+            result["verdict"] = "forged"
+
+        if result["flags"]:
+            error_flags = [f for f in result["flags"] if f["severity"] != "info"]
+            if not error_flags:
+                result["detail"] = "Données vérifiées — document cohérent"
+            elif result["verdict"] == "forged":
+                result["detail"] = f"{len(error_flags)} incohérence(s) majeure(s)"
+            else:
+                result["detail"] = f"{len(error_flags)} anomalie(s) détectée(s)"
+    except Exception:
+        # Si la vérification externe échoue, on continue sans
+        pass
+
     return result
