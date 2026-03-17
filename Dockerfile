@@ -4,7 +4,7 @@ WORKDIR /app
 
 # System deps for OpenCV
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -13,6 +13,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# API par défaut
-EXPOSE 8000
-CMD ["uvicorn", "verifdoc.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 8501
+CMD ["streamlit", "run", "dashboard.py", "--server.address", "0.0.0.0", "--server.port", "8501", "--server.fileWatcherType", "none", "--browser.gatherUsageStats", "false"]
