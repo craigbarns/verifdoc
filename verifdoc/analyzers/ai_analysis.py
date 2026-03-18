@@ -159,7 +159,7 @@ def analyze(image: Image.Image, ocr_text: str | None = None) -> dict:
     try:
         client = anthropic.Anthropic(api_key=_API_KEY)
         response = client.messages.create(
-            model="claude-sonnet-4-5-20241022",
+            model="claude-sonnet-4-20250514",
             max_tokens=2000,
             system=_SYSTEM_PROMPT,
             messages=[
