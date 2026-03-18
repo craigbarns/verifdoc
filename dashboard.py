@@ -588,6 +588,7 @@ with col_doc:
         st.image(preview_img, caption=uploaded_file.name, use_container_width=True)
     elif file_ext == ".pdf":
         st.caption(f"{uploaded_file.name} · {len(file_bytes) / 1024:.0f} Ko")
+        _preview_ok = False
         try:
             import fitz
             import tempfile
@@ -601,8 +602,21 @@ with col_doc:
             st.image(preview_img, caption=f"Page 1 / {len(doc)}", use_container_width=True)
             doc.close()
             Path(tmp_path).unlink(missing_ok=True)
-        except Exception:
-            st.warning("Aperçu PDF indisponible")
+            _preview_ok = True
+        except Exception as exc:
+            import traceback
+            st.warning(f"Rendu image PDF impossible : {exc}")
+        # Fallback : afficher le PDF dans un iframe intégré
+        if not _preview_ok:
+            try:
+                pdf_b64 = base64.b64encode(file_bytes).decode()
+                st.markdown(
+                    f'<iframe src="data:application/pdf;base64,{pdf_b64}" '
+                    f'width="100%" height="600" style="border:1px solid rgba(45,212,191,0.2);border-radius:12px;"></iframe>',
+                    unsafe_allow_html=True,
+                )
+            except Exception:
+                st.info("Utilisez votre lecteur PDF pour visualiser ce fichier.")
 
 with col_results:
     st.markdown("#### Analyse")
