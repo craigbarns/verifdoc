@@ -592,7 +592,7 @@ with col_doc:
     preview_img = None
     if file_ext in [".jpg", ".jpeg", ".png"]:
         preview_img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-        st.image(preview_img, caption=uploaded_file.name, use_container_width=True)
+        st.image(preview_img, caption=uploaded_file.name, use_column_width=True)
     elif file_ext == ".pdf":
         st.caption(f"{uploaded_file.name} · {len(file_bytes) / 1024:.0f} Ko")
         _preview_ok = False
@@ -606,7 +606,7 @@ with col_doc:
             doc = fitz.open(tmp_path)
             pix = doc[0].get_pixmap(matrix=fitz.Matrix(2, 2))
             preview_img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
-            st.image(preview_img, caption=f"Page 1 / {len(doc)}", use_container_width=True)
+            st.image(preview_img, caption=f"Page 1 / {len(doc)}", use_column_width=True)
             doc.close()
             Path(tmp_path).unlink(missing_ok=True)
             _preview_ok = True
@@ -631,7 +631,7 @@ with col_results:
         "Le résumé s'affiche **en pleine largeur sous cette ligne** (section « Résultats »)."
     )
 
-    if st.button("Lancer l'analyse forensique", type="primary", use_container_width=True):
+    if st.button("Lancer l'analyse forensique", type="primary", use_column_width=True):
         pdf_path = None
         try:
             if file_ext == ".pdf":
@@ -1113,10 +1113,10 @@ if "vd_last" in st.session_state:
             data=report_html.encode("utf-8"),
             file_name=f"verifdoc_rapport_{Path(L['filename']).stem}.html",
             mime="text/html",
-            use_container_width=True,
+            use_column_width=True,
         )
     with c_arch:
-        if st.button("Rapport exporté ✓", help="Marque cette analyse comme archivée dans l'historique", use_container_width=True):
+        if st.button("Rapport exporté ✓", help="Marque cette analyse comme archivée dans l'historique", use_column_width=True):
             hid = L.get("history_id")
             if hid:
                 for e in st.session_state.vd_history:
