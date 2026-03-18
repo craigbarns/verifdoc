@@ -43,6 +43,7 @@ LAYER_LABELS = {
     "copy_move": "Copy-move",
     "metadata": "Métadonnées",
     "cross_check": "Validation métier",
+    "ai_analysis": "Intelligence IA",
 }
 
 LAYER_ICONS = {
@@ -51,6 +52,7 @@ LAYER_ICONS = {
     "copy_move": "🔎",
     "metadata": "📋",
     "cross_check": "✅",
+    "ai_analysis": "🤖",
 }
 
 
@@ -499,8 +501,12 @@ with st.sidebar:
     )
 
     st.divider()
-    st.markdown("**Pipeline**")
-    st.caption("5 couches en parallèle — ELA multi-qualité, bruit multi-échelle, copy-move ORB adaptatif, métadonnées avancées, validation métier")
+    st.markdown("**Pipeline AI-Powered**")
+    st.caption("6 couches en parallèle — ELA multi-qualité, bruit multi-échelle, copy-move ORB adaptatif, métadonnées avancées, validation métier + Intelligence IA (Claude Vision)")
+    st.markdown(
+        '<span style="font-size:0.7rem;color:#2dd4bf;font-family:Outfit,sans-serif;">Powered by Claude AI</span>',
+        unsafe_allow_html=True,
+    )
 
     st.divider()
     st.markdown("**Historique (session)**")
@@ -525,7 +531,7 @@ st.markdown(
 <div class="vd-hero">
   <div class="tag">Niveau de risque documentaire</div>
   <h1>Clarté immédiate.<br/>Décision éclairée.</h1>
-  <p class="sub">Signaux forensiques, cohérence métier et référentiels officiels — présentés pour la confiance, la rapidité et l'intégration équipe.</p>
+  <p class="sub">Intelligence artificielle, signaux forensiques et référentiels officiels — 6 couches d'analyse parallèles pour une confiance maximale.</p>
 </div>
 """,
     unsafe_allow_html=True,
@@ -542,14 +548,15 @@ if uploaded_file is None:
     st.markdown(
         """
 <div class="vd-stat-row">
-  <div class="vd-stat"><b>5</b><span>couches d'analyse</span></div>
-  <div class="vd-stat"><b>5</b><span>en parallèle</span></div>
+  <div class="vd-stat"><b>6</b><span>couches d'analyse</span></div>
+  <div class="vd-stat"><b>6</b><span>en parallèle</span></div>
+  <div class="vd-stat"><b>IA</b><span>Claude Vision</span></div>
   <div class="vd-stat"><b>∞</b><span>formats PDF & image</span></div>
 </div>
 <div class="vd-feature-grid">
+  <div class="vd-card vd-feature"><h3>◆ Intelligence IA</h3><p>Claude Vision analyse le document en profondeur — détection sémantique, cohérence des données, explication en langage naturel.</p></div>
   <div class="vd-card vd-feature"><h3>◆ Signaux forensiques</h3><p>ELA multi-qualité, texture multi-échelle et copy-move ORB adaptatif.</p></div>
-  <div class="vd-card vd-feature"><h3>◆ Métadonnées avancées</h3><p>JavaScript, fichiers embarqués, chiffrement, polices, traçabilité PDF/EXIF.</p></div>
-  <div class="vd-card vd-feature"><h3>◆ Couche métier</h3><p>SIRET (référentiel), IBAN, TVA intracom — scoring adaptatif par type de document.</p></div>
+  <div class="vd-card vd-feature"><h3>◆ Métadonnées + Métier</h3><p>SIRET, IBAN, TVA intracom, JavaScript, chiffrement — scoring adaptatif par type de document.</p></div>
 </div>
 """,
         unsafe_allow_html=True,
@@ -787,12 +794,129 @@ if "vd_last" in st.session_state:
     # ══════════════════════════════════════════════════════════════════════
     # TABS : organisation par sections
     # ══════════════════════════════════════════════════════════════════════
-    tab_biz, tab_forensic, tab_visual, tab_data = st.tabs([
+    tab_ai, tab_biz, tab_forensic, tab_visual, tab_data = st.tabs([
+        "🤖 Intelligence IA",
         "🏢 Couche métier",
         "🔬 Forensique",
         "🖼️ Laboratoire visuel",
         "📦 Données brutes",
     ])
+
+    # ── Tab 0 : Intelligence IA ──────────────────────────────────────────
+    with tab_ai:
+        ai_res = results.get("ai_analysis", {})
+        ai_available = ai_res.get("ai_available", False)
+
+        if not ai_available or ai_res.get("verdict") == "skipped":
+            st.markdown(
+                f"""
+<div class="vd-card" style="text-align:center;padding:2rem;">
+  <h3 style="color:#2dd4bf !important;">🤖 Intelligence IA — Non configurée</h3>
+  <p style="color:#8a8793;font-size:0.95rem;">
+    Pour activer l'analyse IA par Claude Vision, configurez la variable d'environnement :
+  </p>
+  <code style="background:#1a1a26;padding:0.5rem 1rem;border-radius:8px;color:#2dd4bf;font-size:0.9rem;">
+    export ANTHROPIC_API_KEY="sk-ant-..."
+  </code>
+  <p style="color:#8a8793;font-size:0.85rem;margin-top:1rem;">
+    L'IA ajoute une analyse sémantique profonde : détection de cohérence, explication en langage naturel,
+    identification des anomalies invisibles aux algorithmes classiques.
+  </p>
+</div>""",
+                unsafe_allow_html=True,
+            )
+        elif ai_res.get("verdict") == "error":
+            st.error(f"Erreur IA : {ai_res.get('detail', 'Erreur inconnue')}")
+        else:
+            # IA a fonctionné — afficher les résultats
+            ai_score = ai_res.get("score", 0)
+            ai_verdict = ai_res.get("verdict", "unknown")
+            ai_explanation = ai_res.get("ai_explanation", "")
+            ai_doc_type = ai_res.get("ai_doc_type", "inconnu")
+            ai_doc_conf = ai_res.get("ai_doc_type_confidence", 0)
+            ai_conf = ai_res.get("ai_confidence", 0)
+            ai_tokens = ai_res.get("ai_tokens", {})
+            ai_latency = ai_res.get("ai_latency_ms", 0)
+            ai_anomalies = ai_res.get("ai_visual_anomalies", [])
+            ai_forgery = ai_res.get("ai_forgery_indicators", [])
+            ai_consistency = ai_res.get("ai_data_consistency", {})
+
+            _v_color = _verdict_color(ai_verdict)
+
+            # KPIs IA
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.metric("Score IA", f"{ai_score * 100:.0f}%")
+            with c2:
+                st.metric("Type détecté (IA)", ai_doc_type.replace("_", " ").title())
+            with c3:
+                st.metric("Confiance IA", f"{ai_conf * 100:.0f}%")
+            with c4:
+                st.metric("Latence", f"{ai_latency}ms")
+
+            # Explication IA en langage naturel
+            st.markdown(
+                f"""
+<div class="vd-exec-summary" style="border-color:{_v_color}44;">
+  <span class="label" style="color:{_v_color};">Analyse Intelligence Artificielle</span>
+  <div style="font-size:0.95rem;line-height:1.7;color:#e8e6e3;">
+    {html_lib.escape(ai_explanation)}
+  </div>
+</div>""",
+                unsafe_allow_html=True,
+            )
+
+            # Cohérence des données
+            st.markdown('<p class="vd-section-title">Cohérence des données</p>', unsafe_allow_html=True)
+            dc1, dc2, dc3 = st.columns(3)
+            def _consistency_icon(val):
+                if val is True:
+                    return "✅"
+                if val is False:
+                    return "❌"
+                return "➖"
+            with dc1:
+                st.markdown(f"{_consistency_icon(ai_consistency.get('calculations_valid'))} **Calculs**")
+            with dc2:
+                st.markdown(f"{_consistency_icon(ai_consistency.get('dates_coherent'))} **Dates**")
+            with dc3:
+                st.markdown(f"{_consistency_icon(ai_consistency.get('amounts_plausible'))} **Montants**")
+            if ai_consistency.get("detail"):
+                st.caption(ai_consistency["detail"])
+
+            # Anomalies visuelles
+            if ai_anomalies:
+                st.markdown(f'<p class="vd-section-title">Anomalies visuelles ({len(ai_anomalies)})</p>', unsafe_allow_html=True)
+                for a in ai_anomalies:
+                    sev = a.get("severity", "medium")
+                    sev_color = _verdict_color("forged") if sev == "high" else (_verdict_color("suspect") if sev == "medium" else _verdict_color("clean"))
+                    st.markdown(
+                        f'<div class="vd-alert-card {sev}">'
+                        f'<div class="vd-alert-type" style="color:{sev_color};">{html_lib.escape(a.get("zone", ""))}</div>'
+                        f'<div class="vd-alert-detail">{html_lib.escape(a.get("detail", ""))}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+
+            # Indicateurs de falsification
+            if ai_forgery:
+                st.markdown(f'<p class="vd-section-title">Indicateurs de falsification ({len(ai_forgery)})</p>', unsafe_allow_html=True)
+                for f in ai_forgery:
+                    sev = f.get("severity", "medium")
+                    sev_color = _verdict_color("forged") if sev == "high" else (_verdict_color("suspect") if sev == "medium" else _verdict_color("clean"))
+                    st.markdown(
+                        f'<div class="vd-alert-card {sev}">'
+                        f'<div class="vd-alert-type" style="color:{sev_color};">{html_lib.escape(f.get("type", ""))}</div>'
+                        f'<div class="vd-alert-detail">{html_lib.escape(f.get("detail", ""))}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+
+            # Coût
+            in_tok = ai_tokens.get("input", 0)
+            out_tok = ai_tokens.get("output", 0)
+            cost_est = (in_tok * 3 + out_tok * 15) / 1_000_000  # Sonnet pricing
+            st.caption(f"Tokens : {in_tok} in / {out_tok} out · Coût estimé : ${cost_est:.4f}")
 
     # ── Tab 1 : Couche métier ──────────────────────────────────────────────
     with tab_biz:

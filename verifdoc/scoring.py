@@ -7,57 +7,65 @@ Wording produit : niveaux de risque (faible / modéré / élevé) + prochaine é
 from __future__ import annotations
 
 WEIGHTS = {
-    "ela": 0.30,
-    "noise": 0.15,
-    "copy_move": 0.15,
-    "metadata": 0.15,
-    "cross_check": 0.25,
+    "ela": 0.22,
+    "noise": 0.12,
+    "copy_move": 0.12,
+    "metadata": 0.12,
+    "cross_check": 0.22,
+    "ai_analysis": 0.20,
 }
 
 # Poids adaptés par type de document — le cross_check est pondéré plus
-# fortement quand la validation métier est déterminante (bulletins, factures)
+# fortement quand la validation métier est déterminante (bulletins, factures).
+# L'IA apporte 0.25 pour les types où l'analyse sémantique est clé.
 WEIGHTS_BY_DOCTYPE = {
     "bulletin_paie": {
-        "ela": 0.15,
-        "noise": 0.10,
-        "copy_move": 0.10,
-        "metadata": 0.20,
-        "cross_check": 0.45,
+        "ela": 0.10,
+        "noise": 0.08,
+        "copy_move": 0.08,
+        "metadata": 0.14,
+        "cross_check": 0.35,
+        "ai_analysis": 0.25,
     },
     "avis_imposition": {
-        "ela": 0.20,
-        "noise": 0.10,
-        "copy_move": 0.10,
-        "metadata": 0.25,
-        "cross_check": 0.35,
+        "ela": 0.15,
+        "noise": 0.08,
+        "copy_move": 0.08,
+        "metadata": 0.19,
+        "cross_check": 0.25,
+        "ai_analysis": 0.25,
     },
     "facture": {
-        "ela": 0.15,
-        "noise": 0.10,
-        "copy_move": 0.10,
-        "metadata": 0.25,
-        "cross_check": 0.40,
+        "ela": 0.10,
+        "noise": 0.08,
+        "copy_move": 0.08,
+        "metadata": 0.19,
+        "cross_check": 0.30,
+        "ai_analysis": 0.25,
     },
     "rib": {
-        "ela": 0.20,
-        "noise": 0.10,
-        "copy_move": 0.10,
-        "metadata": 0.25,
-        "cross_check": 0.35,
+        "ela": 0.15,
+        "noise": 0.08,
+        "copy_move": 0.08,
+        "metadata": 0.19,
+        "cross_check": 0.25,
+        "ai_analysis": 0.25,
     },
     "releve_bancaire": {
-        "ela": 0.20,
-        "noise": 0.10,
-        "copy_move": 0.10,
-        "metadata": 0.25,
-        "cross_check": 0.35,
+        "ela": 0.15,
+        "noise": 0.08,
+        "copy_move": 0.08,
+        "metadata": 0.19,
+        "cross_check": 0.25,
+        "ai_analysis": 0.25,
     },
     "quittance_loyer": {
-        "ela": 0.20,
-        "noise": 0.15,
-        "copy_move": 0.10,
-        "metadata": 0.20,
-        "cross_check": 0.35,
+        "ela": 0.15,
+        "noise": 0.10,
+        "copy_move": 0.08,
+        "metadata": 0.15,
+        "cross_check": 0.27,
+        "ai_analysis": 0.25,
     },
 }
 
@@ -303,7 +311,7 @@ def compute_final_score(results: dict[str, dict], doc_type: str | None = None) -
             f"{risk_next_step}."
         )
 
-    max_layers = 5
+    max_layers = 6
     run_count = len(layer_details)
     confidence = min(100.0, round(100 * run_count / max_layers))
     if results.get("cross_check", {}).get("verdict") == "unknown":
@@ -317,6 +325,13 @@ def compute_final_score(results: dict[str, dict], doc_type: str | None = None) -
 
     business = _business_verification_summary(cross)
     exec_anomalies = _executive_anomalies_line(results, verdict)
+
+    # Données IA enrichies
+    ai_res = results.get("ai_analysis") or {}
+    ai_available = ai_res.get("ai_available", False)
+    ai_explanation = ai_res.get("ai_explanation", "")
+    ai_doc_type = ai_res.get("ai_doc_type")
+    ai_confidence = ai_res.get("ai_confidence", 0)
 
     return {
         "final_score": round(final_score, 3),
@@ -334,6 +349,10 @@ def compute_final_score(results: dict[str, dict], doc_type: str | None = None) -
         "doc_type_label": doc_type_label,
         "executive_anomalies": exec_anomalies,
         "business_verification": business,
+        "ai_available": ai_available,
+        "ai_explanation": ai_explanation,
+        "ai_doc_type": ai_doc_type,
+        "ai_confidence": ai_confidence,
         "disclaimer": (
             "Indicateur d’aide à la décision — ne constitue pas une preuve juridique. "
             "Confronter à l’original et à un contrôle humain."

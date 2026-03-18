@@ -98,15 +98,22 @@ app.add_middleware(
 @app.get("/")
 async def root():
     """Info API."""
+    from ..analyzers.ai_analysis import _is_available as _ai_ok
     return {
         "name": "VerifDoc API",
-        "version": "0.1.0",
-        "description": "Détection de fraude documentaire par IA",
+        "version": "0.3.0",
+        "description": "Détection de fraude documentaire par IA — 6 couches forensiques + Intelligence Artificielle",
+        "ai_enabled": _ai_ok(),
         "endpoints": {
             "analyze": "POST /api/v1/analyze",
             "quick": "POST /api/v1/analyze/quick",
             "health": "GET /api/v1/health",
             "docs": "GET /docs",
+        },
+        "config": {
+            "ANTHROPIC_API_KEY": "Set to enable AI analysis layer (Claude Vision)",
+            "VERIFDOC_API_KEYS": "Comma-separated API keys for authentication",
+            "VERIFDOC_RATE_LIMIT": f"Requests per minute (current: {RATE_LIMIT_RPM})",
         },
     }
 
@@ -114,7 +121,8 @@ async def root():
 @app.get("/api/v1/health")
 async def health():
     """Health check."""
-    return {"status": "ok", "version": "0.2.0"}
+    from ..analyzers.ai_analysis import _is_available as _ai_ok
+    return {"status": "ok", "version": "0.3.0", "ai_enabled": _ai_ok()}
 
 
 @app.post("/api/v1/analyze")
@@ -124,10 +132,11 @@ async def analyze_full(
     run_ocr: bool = Query(True, description="Activer OCR + validation croisée"),
     _key: str = Depends(verify_api_key),
 ):
-    """Analyse complète d'un document (5 couches).
+    """Analyse complète d'un document (6 couches dont IA).
 
     Accepte : PDF, JPG, JPEG, PNG.
     Retourne : score de confiance 0-100, verdict, détail par couche.
+    Couches : ELA, bruit, copy-move, métadonnées, cross_check, ai_analysis (si ANTHROPIC_API_KEY).
     """
     # Valider le type de fichier
     allowed_types = [

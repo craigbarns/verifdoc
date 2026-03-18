@@ -21,6 +21,10 @@ RUN groupadd -r verifdoc && useradd -r -g verifdoc -d /app -s /sbin/nologin veri
     && chown -R verifdoc:verifdoc /app
 USER verifdoc
 
+# AI layer — set ANTHROPIC_API_KEY at runtime to enable Claude Vision analysis
+# docker run -e ANTHROPIC_API_KEY=sk-ant-... ...
+ENV ANTHROPIC_API_KEY=""
+
 EXPOSE 8501
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \

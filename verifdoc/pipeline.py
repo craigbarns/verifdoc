@@ -1,7 +1,8 @@
 """
-Pipeline principal VerifDoc — Orchestre les 5 couches d'analyse.
+Pipeline principal VerifDoc — Orchestre les 6 couches d'analyse.
 
-ELA, bruit, copy-move et métadonnées s'exécutent en parallèle pour réduire la latence.
+ELA, bruit, copy-move, métadonnées, OCR+cross_check et Intelligence IA
+s'exécutent en parallèle pour réduire la latence.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from typing import Any
 
 from PIL import Image
 
-from .analyzers import ela, noise, copy_move, metadata, cross_check
+from .analyzers import ela, noise, copy_move, metadata, cross_check, ai_analysis
 from .analyzers import ocr as ocr_module
 from .scoring import compute_final_score
 from .utils.pdf_handler import pdf_to_images, is_pdf
@@ -135,6 +136,15 @@ def _run_ocr_cross(
         )
 
 
+def _task_ai_analysis(image: Image.Image, ocr_text: str | None) -> tuple[str, dict, None]:
+    """Worker IA — analyse sémantique via Claude Vision."""
+    try:
+        r = ai_analysis.analyze(image, ocr_text=ocr_text)
+        return "ai_analysis", r, None
+    except Exception as e:
+        return "ai_analysis", {"score": None, "error": str(e), "ai_available": False}, None
+
+
 def _run_all_parallel(
     image: Image.Image,
     pdf_path: Path | str | None,
@@ -144,19 +154,27 @@ def _run_all_parallel(
     run_ocr: bool,
     progress_callback: Any | None = None,
 ) -> tuple[dict[str, dict], dict[str, Any]]:
-    """Exécute TOUTES les couches en parallèle (forensiques + OCR).
+    """Exécute TOUTES les couches en parallèle (forensiques + OCR + IA).
 
-    5 workers : ELA, bruit, copy-move, métadonnées, OCR+cross_check.
+    Jusqu'à 6 workers : ELA, bruit, copy-move, métadonnées, OCR+cross_check, Intelligence IA.
+    L'IA ne s'exécute que si ANTHROPIC_API_KEY est configurée.
     """
     results: dict[str, dict] = {}
     visuals: dict[str, Any] = {}
-    total_tasks = 5 if run_ocr else 4
+    ai_enabled = ai_analysis._is_available()
+    total_tasks = 4 + (1 if run_ocr else 0) + (1 if ai_enabled else 0)
     done_count = 0
+    ocr_text_holder: list[str | None] = [None]
 
     def _task_ocr_cross():
-        return _run_ocr_cross(image, pdf_path, doc_type, languages, run_ocr)
+        result = _run_ocr_cross(image, pdf_path, doc_type, languages, run_ocr)
+        # Capturer le texte OCR pour l'IA (si dispo)
+        ocr_block = result[0]
+        if "ocr" in ocr_block and "full_text" in ocr_block["ocr"]:
+            ocr_text_holder[0] = ocr_block["ocr"]["full_text"]
+        return result
 
-    with ThreadPoolExecutor(max_workers=5) as ex:
+    with ThreadPoolExecutor(max_workers=6) as ex:
         futures = {
             ex.submit(_task_ela, image, keep_visuals): "forensic",
             ex.submit(_task_noise, image, keep_visuals): "forensic",
@@ -165,6 +183,10 @@ def _run_all_parallel(
         }
         if run_ocr:
             futures[ex.submit(_task_ocr_cross)] = "ocr"
+        if ai_enabled:
+            # L'IA démarre en parallèle — elle recevra le texte OCR si disponible
+            # mais fonctionne aussi sans (vision seule)
+            futures[ex.submit(_task_ai_analysis, image, None)] = "ai"
 
         for fut in as_completed(futures):
             task_type = futures[fut]
@@ -173,9 +195,12 @@ def _run_all_parallel(
                 results[key] = res
                 if extra and extra[1] is not None:
                     visuals[extra[0]] = extra[1]
-            else:
+            elif task_type == "ocr":
                 ocr_block, _ = fut.result()
                 results.update(ocr_block)
+            elif task_type == "ai":
+                _, ai_res, _ = fut.result()
+                results["ai_analysis"] = ai_res
             done_count += 1
             if progress_callback:
                 try:
@@ -186,6 +211,15 @@ def _run_all_parallel(
     # Si OCR désactivé, ajouter le bloc skipped
     if not run_ocr and "cross_check" not in results:
         results["cross_check"] = {"score": 0.0, "verdict": "skipped", "detail": "OCR désactivé"}
+
+    # Si IA non disponible, ajouter le bloc skipped
+    if not ai_enabled and "ai_analysis" not in results:
+        results["ai_analysis"] = {
+            "score": None,
+            "verdict": "skipped",
+            "detail": "ANTHROPIC_API_KEY non configurée",
+            "ai_available": False,
+        }
 
     return results, visuals
 
@@ -260,7 +294,8 @@ def analyze_for_dashboard(
 ) -> dict:
     """Analyse complète pour le dashboard : résultats + visuels forensiques.
 
-    5 couches en parallèle. progress_callback(done, total) pour la barre de progression.
+    Jusqu'à 6 couches en parallèle (dont IA si configurée).
+    progress_callback(done, total) pour la barre de progression.
     """
     start_time = time.time()
     results, visuals = _run_all_parallel(
