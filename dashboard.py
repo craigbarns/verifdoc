@@ -631,7 +631,7 @@ with col_results:
         "Le résumé s'affiche **en pleine largeur sous cette ligne** (section « Résultats »)."
     )
 
-    if st.button("Lancer l'analyse forensique", type="primary", use_column_width=True):
+    if st.button("Lancer l'analyse forensique", type="primary"):
         pdf_path = None
         try:
             if file_ext == ".pdf":
@@ -1113,10 +1113,9 @@ if "vd_last" in st.session_state:
             data=report_html.encode("utf-8"),
             file_name=f"verifdoc_rapport_{Path(L['filename']).stem}.html",
             mime="text/html",
-            use_column_width=True,
         )
     with c_arch:
-        if st.button("Rapport exporté ✓", help="Marque cette analyse comme archivée dans l'historique", use_column_width=True):
+        if st.button("Rapport exporté ✓", help="Marque cette analyse comme archivée dans l'historique"):
             hid = L.get("history_id")
             if hid:
                 for e in st.session_state.vd_history:
