@@ -14,10 +14,41 @@ Mindee extrait. VerifDoc vérifie.
 
 from __future__ import annotations
 
+import logging
 import re
 import json
+import time as _time
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
+
+logger = logging.getLogger(__name__)
+
+
+def _fetch_with_retry(url: str, max_retries: int = 3, base_delay: float = 0.5) -> dict | None:
+    """Fetch JSON avec retry exponentiel backoff.
+
+    Args:
+        url: URL à interroger.
+        max_retries: Nombre max de tentatives.
+        base_delay: Délai initial en secondes (doublé à chaque retry).
+
+    Returns:
+        dict parsé ou None si toutes les tentatives échouent.
+    """
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            req = Request(url, headers={"User-Agent": "VerifDoc/1.0"})
+            with urlopen(req, timeout=8) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except (URLError, HTTPError, TimeoutError, OSError) as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                logger.warning("Retry %d/%d pour %s après %.1fs — %s", attempt + 1, max_retries, url, delay, e)
+                _time.sleep(delay)
+    logger.error("Échec définitif pour %s après %d tentatives — %s", url, max_retries, last_error)
+    return None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -56,14 +87,11 @@ def verify_siret_online(siret: str) -> dict:
     data = None
     api_used = None
     for url in apis:
-        try:
-            req = Request(url, headers={"User-Agent": "VerifDoc/1.0"})
-            with urlopen(req, timeout=8) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                api_used = url.split("/")[2]
-                break
-        except Exception:
-            continue
+        result = _fetch_with_retry(url)
+        if result is not None:
+            data = result
+            api_used = url.split("/")[2]
+            break
 
     if data is None:
         return {

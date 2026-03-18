@@ -107,17 +107,34 @@ def ela_hotspots(ela_image: Image.Image, threshold: float = 0.6) -> list[dict]:
 def analyze(image: Image.Image) -> dict:
     """Analyse ELA complète d'une image.
 
+    Multi-quality ELA : recompresse à 75, 85 et 95 pour réduire
+    les faux positifs. Le score médian est retenu.
+
     Returns:
-        dict avec score, verdict, hotspots, ela_image.
+        dict avec score, verdict, hotspots, ela_image, quality_scores.
     """
-    ela_img = generate_ela(image)
-    score = ela_score(ela_img)
+    qualities = [75, 85, 95]
+    quality_scores = {}
+    ela_images = {}
+
+    for q in qualities:
+        ela_img = generate_ela(image, quality=q)
+        quality_scores[q] = ela_score(ela_img)
+        ela_images[q] = ela_img
+
+    # Score médian pour robustesse
+    sorted_scores = sorted(quality_scores.values())
+    score = sorted_scores[len(sorted_scores) // 2]
+
+    # Utiliser l'image ELA à qualité 90 (85 la plus proche) pour les hotspots
+    best_q = min(qualities, key=lambda q: abs(q - 90))
+    ela_img = ela_images[best_q]
     hotspots = ela_hotspots(ela_img)
 
-    if score < 0.03:
+    if score < 0.025:
         verdict = "clean"
         detail = "Aucune anomalie ELA détectée"
-    elif score < 0.08:
+    elif score < 0.07:
         verdict = "suspect"
         detail = f"{len(hotspots)} zone(s) avec compression incohérente"
     else:
@@ -131,4 +148,5 @@ def analyze(image: Image.Image) -> dict:
         "detail": detail,
         "hotspots": hotspots,
         "ela_image": ela_img,
+        "quality_scores": quality_scores,
     }

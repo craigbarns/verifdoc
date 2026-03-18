@@ -53,7 +53,6 @@ def analyze_pdf_metadata(pdf_path: str | Path) -> dict:
         return {"error": f"PDF illisible: {e}", "flags": []}
 
     meta = doc.metadata or {}
-    doc.close()
 
     producer = (meta.get("producer") or "").strip()
     creator = (meta.get("creator") or "").strip()
@@ -62,6 +61,85 @@ def analyze_pdf_metadata(pdf_path: str | Path) -> dict:
     title = (meta.get("title") or "").strip()
 
     flags = []
+    extra_meta = {}
+
+    # ── Vérifications avancées (avant doc.close()) ────────────────────────
+    # JavaScript embarqué
+    try:
+        has_js = False
+        for page in doc:
+            for annot in page.annots() or []:
+                if annot.type[0] in (19, 20):  # Widget / Screen annotations
+                    has_js = True
+                    break
+            # Check page-level actions
+            if "/JS" in (page.get_text("rawdict") or {}).get("text", ""):
+                has_js = True
+        # Document-level JS
+        if doc.pdf_catalog():
+            catalog_str = str(doc.pdf_catalog())
+            if "/JavaScript" in catalog_str or "/JS" in catalog_str:
+                has_js = True
+        if has_js:
+            flags.append({
+                "type": "javascript_embedded",
+                "severity": "high",
+                "detail": "JavaScript embarqué détecté — risque de contenu actif malveillant",
+            })
+            extra_meta["has_javascript"] = True
+    except Exception:
+        pass
+
+    # Fichiers embarqués (pièces jointes)
+    try:
+        embedded_count = doc.embfile_count()
+        if embedded_count > 0:
+            flags.append({
+                "type": "embedded_files",
+                "severity": "medium",
+                "detail": f"{embedded_count} fichier(s) embarqué(s) dans le PDF",
+            })
+            extra_meta["embedded_files"] = embedded_count
+    except Exception:
+        pass
+
+    # Chiffrement / permissions
+    try:
+        if doc.is_encrypted:
+            flags.append({
+                "type": "encrypted_pdf",
+                "severity": "medium",
+                "detail": "PDF chiffré — les restrictions de permissions peuvent masquer des modifications",
+            })
+            extra_meta["encrypted"] = True
+    except Exception:
+        pass
+
+    # Analyse des polices (heuristique falsification)
+    try:
+        font_names = set()
+        for page_num in range(min(3, len(doc))):
+            page = doc[page_num]
+            font_list = page.get_fonts()
+            for f in font_list:
+                font_names.add(f[3] if len(f) > 3 else f[0])
+        extra_meta["fonts"] = list(font_names)[:20]
+        if len(font_names) > 12:
+            flags.append({
+                "type": "excessive_fonts",
+                "severity": "medium",
+                "detail": f"{len(font_names)} polices différentes — inhabituel pour un document officiel",
+            })
+    except Exception:
+        pass
+
+    # Nombre de pages
+    try:
+        extra_meta["page_count"] = len(doc)
+    except Exception:
+        pass
+
+    doc.close()
 
     # Check producer suspect
     producer_lower = producer.lower()
@@ -93,7 +171,6 @@ def analyze_pdf_metadata(pdf_path: str | Path) -> dict:
                 "severity": "high",
                 "detail": f"Date de modification ({d_mod}) antérieure à la création ({d_create})",
             })
-        # Modification très récente d'un vieux document
         if d_create and d_mod:
             delta = (d_mod - d_create).days
             if delta > 365:
@@ -119,18 +196,21 @@ def analyze_pdf_metadata(pdf_path: str | Path) -> dict:
     else:
         verdict = "forged"
 
+    metadata_out = {
+        "producer": producer,
+        "creator": creator,
+        "creation_date": str(d_create) if d_create else None,
+        "modification_date": str(d_mod) if d_mod else None,
+        "title": title,
+    }
+    metadata_out.update(extra_meta)
+
     return {
         "analyzer": "metadata",
         "score": round(score, 4),
         "verdict": verdict,
         "detail": f"{len(flags)} anomalie(s) dans les métadonnées" if flags else "Métadonnées cohérentes",
-        "metadata": {
-            "producer": producer,
-            "creator": creator,
-            "creation_date": str(d_create) if d_create else None,
-            "modification_date": str(d_mod) if d_mod else None,
-            "title": title,
-        },
+        "metadata": metadata_out,
         "flags": flags,
     }
 

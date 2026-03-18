@@ -19,14 +19,15 @@ from PIL import Image
 
 def _orb_ransac(
     gray: np.ndarray,
-    nfeatures: int = 5000,
+    nfeatures: int = 10000,
     min_match_count: int = 10,
     min_spatial_dist: float = 20.0,
 ) -> dict:
-    """Détecte les zones copy-move par ORB + RANSAC.
+    """Détecte les zones copy-move par ORB + RANSAC adaptatif.
 
-    Les matches sont filtrés pour exclure les keypoints
-    trivialement proches (même région).
+    Améliorations v2 :
+      - 10 000 features au lieu de 5 000 → meilleure couverture
+      - Seuil RANSAC adaptatif selon la résolution de l'image
     """
     orb = cv2.ORB_create(nfeatures=nfeatures)
     kp, des = orb.detectAndCompute(gray, None)
@@ -57,7 +58,11 @@ def _orb_ransac(
         src_pts = np.float32([kp[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
         dst_pts = np.float32([kp[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
 
-        _, ransac_mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
+        # Seuil RANSAC adaptatif : images haute résolution → seuil plus large
+        h, w = gray.shape
+        ransac_thresh = max(3.0, min(8.0, (h + w) / 500))
+
+        _, ransac_mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, ransac_thresh)
 
         if ransac_mask is not None:
             inliers = ransac_mask.ravel().tolist()

@@ -12,7 +12,10 @@ Types supportés :
 
 from __future__ import annotations
 
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -601,7 +604,7 @@ def analyze(ocr_result: dict, doc_type: str = "auto") -> dict:
             result["detail"] = f"{len(error_flags)} anomalie(s) détectée(s)"
         else:
             result["detail"] = "Données du document cohérentes"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Erreur lors des vérifications externes: %s", e, exc_info=True)
 
     return result

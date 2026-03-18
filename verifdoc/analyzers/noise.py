@@ -83,20 +83,11 @@ def wavelet_decompose(
     }
 
 
-def noise_score(source: str | Path | Image.Image | np.ndarray) -> float:
-    """Calcule un score d'incohérence de bruit [0-1].
-
-    Divise l'image en blocs et mesure la variance du bruit
-    entre blocs. Une image authentique a une variance uniforme.
-    """
-    gray = _to_gray(source).astype(np.float32)
-
-    # Estimer le bruit par filtre laplacien
+def _noise_score_single(gray: np.ndarray, block_size: int) -> float:
+    """Score d'incohérence de bruit pour un block_size donné."""
     noise_map = cv2.Laplacian(gray, cv2.CV_32F)
 
-    # Diviser en blocs 32x32
     h, w = noise_map.shape
-    block_size = 32
     variances = []
 
     for y in range(0, h - block_size, block_size):
@@ -108,13 +99,10 @@ def noise_score(source: str | Path | Image.Image | np.ndarray) -> float:
         return 0.0
 
     variances = np.array(variances)
-    # Filtrer les blocs quasi-vides (fond blanc) et très denses (texte)
-    # pour ne comparer que les blocs ayant du contenu
     median_var = np.median(variances)
     if median_var == 0:
         return 0.0
 
-    # Garder les blocs dans la plage interquartile élargie
     q1, q3 = np.percentile(variances, [10, 90])
     filtered = variances[(variances >= q1) & (variances <= q3)]
 
@@ -126,11 +114,23 @@ def noise_score(source: str | Path | Image.Image | np.ndarray) -> float:
         return 0.0
 
     cv = np.std(filtered) / mean_var
-
-    # Normaliser en [0, 1] — CV > 3 = très suspect
-    # Documents ont naturellement de la variance entre texte et fond
     score = min(1.0, cv / 3.0)
     return round(score, 4)
+
+
+def noise_score(source: str | Path | Image.Image | np.ndarray) -> float:
+    """Calcule un score d'incohérence de bruit [0-1].
+
+    Multi-scale : analyse les blocs 16×16 et 32×32 puis retient
+    le pire score (le plus suspect) pour ne rien rater.
+    """
+    gray = _to_gray(source).astype(np.float32)
+
+    block_sizes = [16, 32]
+    scores = [_noise_score_single(gray, bs) for bs in block_sizes]
+
+    # Worst-case : retenir le pire score
+    return max(scores) if scores else 0.0
 
 
 def analyze(image: Image.Image) -> dict:

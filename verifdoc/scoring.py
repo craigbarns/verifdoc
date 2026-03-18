@@ -14,6 +14,53 @@ WEIGHTS = {
     "cross_check": 0.25,
 }
 
+# Poids adaptés par type de document — le cross_check est pondéré plus
+# fortement quand la validation métier est déterminante (bulletins, factures)
+WEIGHTS_BY_DOCTYPE = {
+    "bulletin_paie": {
+        "ela": 0.15,
+        "noise": 0.10,
+        "copy_move": 0.10,
+        "metadata": 0.20,
+        "cross_check": 0.45,
+    },
+    "avis_imposition": {
+        "ela": 0.20,
+        "noise": 0.10,
+        "copy_move": 0.10,
+        "metadata": 0.25,
+        "cross_check": 0.35,
+    },
+    "facture": {
+        "ela": 0.15,
+        "noise": 0.10,
+        "copy_move": 0.10,
+        "metadata": 0.25,
+        "cross_check": 0.40,
+    },
+    "rib": {
+        "ela": 0.20,
+        "noise": 0.10,
+        "copy_move": 0.10,
+        "metadata": 0.25,
+        "cross_check": 0.35,
+    },
+    "releve_bancaire": {
+        "ela": 0.20,
+        "noise": 0.10,
+        "copy_move": 0.10,
+        "metadata": 0.25,
+        "cross_check": 0.35,
+    },
+    "quittance_loyer": {
+        "ela": 0.20,
+        "noise": 0.15,
+        "copy_move": 0.10,
+        "metadata": 0.20,
+        "cross_check": 0.35,
+    },
+}
+
 # Verdicts internes (clean / suspect / forged) — inchangés pour la logique & CSS
 RISK_COPY = {
     "clean": {
@@ -157,13 +204,24 @@ def _executive_anomalies_line(results: dict, verdict: str) -> str:
     return "Analyse terminée — consulter le détail par couche ci-dessous."
 
 
-def compute_final_score(results: dict[str, dict]) -> dict:
-    """Calcule le score final, le niveau de risque produit et la synthèse métier."""
+def compute_final_score(results: dict[str, dict], doc_type: str | None = None) -> dict:
+    """Calcule le score final, le niveau de risque produit et la synthèse métier.
+
+    Args:
+        results: Résultats des analyseurs.
+        doc_type: Type de document détecté (optionnel). Si fourni et reconnu,
+                  les poids par type sont appliqués pour un scoring plus pertinent.
+    """
+    # Sélectionner les poids adaptés au type de document
+    if doc_type is None:
+        doc_type = (results.get("cross_check") or {}).get("doc_type")
+    active_weights = WEIGHTS_BY_DOCTYPE.get(doc_type, WEIGHTS)
+
     weighted_sum = 0.0
     total_weight = 0.0
     layer_details = []
 
-    for name, weight in WEIGHTS.items():
+    for name, weight in active_weights.items():
         if name in results and results[name].get("score") is not None:
             analyzer_score = results[name]["score"]
             weighted_sum += analyzer_score * weight
