@@ -11,7 +11,6 @@ from __future__ import annotations
 import base64
 import html as html_lib
 import io
-import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -20,22 +19,6 @@ from pathlib import Path
 import streamlit as st
 from PIL import Image
 
-
-# ── Démarrage API FastAPI en arrière-plan ────────────────────────────────────
-def _start_api_server():
-    """Lance l'API FastAPI sur le port 8000 dans un thread séparé."""
-    try:
-        import uvicorn
-        from verifdoc.api.main import app as api_app
-        uvicorn.run(api_app, host="0.0.0.0", port=8000, log_level="warning")
-    except Exception:
-        pass  # Silencieux si uvicorn pas installé ou port déjà pris
-
-
-if "api_started" not in st.session_state:
-    st.session_state.api_started = True
-    t = threading.Thread(target=_start_api_server, daemon=True)
-    t.start()
 
 # ── Page ─────────────────────────────────────────────────────────────────────
 st.set_page_config(
