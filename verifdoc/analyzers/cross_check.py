@@ -518,12 +518,15 @@ def validate_quittance_loyer(fields: dict) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Mots-clés pour auto-détection
+# NOTE : Les mots-clés "discriminants" ont un poids plus élevé.
+# IBAN/BIC/RIB apparaissent sur beaucoup de types de documents (factures,
+# quittances, bulletins) → ils ne sont PAS discriminants pour le type RIB.
 DOC_KEYWORDS = {
-    "bulletin_paie": ["BULLETIN", "PAIE", "SALAIRE BRUT", "NET A PAYER", "NET À PAYER"],
+    "bulletin_paie": ["BULLETIN", "PAIE", "SALAIRE BRUT", "NET A PAYER", "NET À PAYER", "COTISATION"],
     "avis_imposition": ["AVIS D'IMPOSITION", "REVENU FISCAL", "IMPOT SUR LE REVENU", "IMPÔT SUR LE REVENU"],
-    "facture": ["FACTURE", "TOTAL HT", "TOTAL TTC", "MONTANT TTC", "TVA"],
-    "rib": ["RELEV", "IDENTIT", "BANCAIRE", "RIB", "IBAN", "BIC", "CODE BANQUE", "CODE GUICHET"],
-    "releve_bancaire": ["RELEV", "COMPTE", "SOLDE", "ANCIEN SOLDE", "NOUVEAU SOLDE", "DÉBIT", "CRÉDIT"],
+    "facture": ["FACTURE", "TOTAL HT", "TOTAL TTC", "MONTANT TTC", "MONTANT HT"],
+    "rib": ["RELEV", "IDENTIT", "CODE BANQUE", "CODE GUICHET"],
+    "releve_bancaire": ["ANCIEN SOLDE", "NOUVEAU SOLDE", "DÉBIT", "CRÉDIT"],
     "quittance_loyer": ["QUITTANCE", "LOYER", "CHARGES", "BAILLEUR", "LOCATAIRE"],
 }
 
@@ -539,7 +542,17 @@ DOC_HANDLERS = {
 
 
 def detect_doc_type(text: str) -> str:
-    """Auto-détection du type de document par mots-clés."""
+    """Auto-détection du type de document par mots-clés.
+
+    Priorités :
+    1. Signaux forts déterminants (ex: mot "FACTURE" + montants HT/TTC)
+    2. Score par comptage de mots-clés discriminants
+    3. En cas d'égalité, le type le plus spécifique l'emporte
+
+    Note : IBAN, BIC, RIB, TVA sont communs à plusieurs types de documents.
+    Ils ne sont plus utilisés comme discriminants pour éviter les faux positifs
+    (ex: une facture avec un RIB en annexe classée comme "rib").
+    """
     text_upper = text.upper()
     scores = {}
 
@@ -551,7 +564,9 @@ def detect_doc_type(text: str) -> str:
     if not scores:
         return "unknown"
 
-    # Bulletins souvent mal classés « facture » si le faux doc mélange les libellés
+    # ── Signaux forts (prioritaires) ─────────────────────────────────────────
+
+    # Bulletin de paie : NET A PAYER + BRUT = quasi-certain
     bp = scores.get("bulletin_paie", 0)
     if ("NET A PAYER" in text_upper or "NET À PAYER" in text_upper) and "BRUT" in text_upper:
         if bp >= 1 or "BULLETIN" in text_upper or "PAIE" in text_upper or "COTISATION" in text_upper:
@@ -559,6 +574,20 @@ def detect_doc_type(text: str) -> str:
     if bp >= 3:
         return "bulletin_paie"
 
+    # Facture : le mot "FACTURE" + au moins un montant (HT/TTC) = quasi-certain
+    # Une facture peut contenir un RIB/IBAN en annexe, ça ne change pas son type
+    if "FACTURE" in text_upper and scores.get("facture", 0) >= 2:
+        return "facture"
+
+    # Avis d'imposition : signal très fort
+    if scores.get("avis_imposition", 0) >= 2:
+        return "avis_imposition"
+
+    # Quittance de loyer : signal fort
+    if "QUITTANCE" in text_upper and "LOYER" in text_upper:
+        return "quittance_loyer"
+
+    # ── Fallback : max score ─────────────────────────────────────────────────
     return max(scores, key=scores.get)
 
 

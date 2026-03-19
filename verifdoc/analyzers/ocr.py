@@ -377,14 +377,30 @@ def extract_fields_facture(ocr_result: dict) -> dict:
         fields["iban"] = iban
 
     # TVA intracommunautaire
-    tva_intra_match = re.search(r'(?:TVA|N[°O]?\s*TVA)\s*(?:INTRA\s*(?:COMMUNAUTAIRE)?|INTRACOMMUNAUTAIRE)\s*[:\s]*(FR\s?\d{2}\s?\d{9})', text_upper)
+    # Formats possibles : "FR13537466104", "FR 13 537466104", "FR 13 537 466 104"
+    # Labels possibles : "TVA intracommunautaire", "N° TVA intra", "Numéro intracommunautaire"
+    tva_intra_match = re.search(
+        r'(?:TVA|N[°O]?\s*TVA|NUM[ÉE]RO)\s*'
+        r'(?:INTRA\s*(?:COMMUNAUTAIRE)?|INTRACOMMUNAUTAIRE)\s*'
+        r'[:\s]*(FR[\s]*\d{2}[\s\d]{9,15})',
+        text_upper,
+    )
     if tva_intra_match:
-        fields["tva_intra"] = tva_intra_match.group(1).replace(" ", "")
-    else:
-        # Fallback : chercher FR + 11 chiffres
-        tva_match = re.search(r'\b(FR\s?\d{2}\s?\d{9})\b', text_upper)
+        raw = re.sub(r'\s', '', tva_intra_match.group(1))
+        if len(raw) == 13:  # FR + 11 chiffres
+            fields["tva_intra"] = raw
+    if "tva_intra" not in fields:
+        # Fallback : chercher FR + 11 chiffres (avec espaces possibles)
+        tva_match = re.search(r'\b(FR[\s]*\d{2}[\s\d]{9,15})\b', text_upper)
         if tva_match:
-            fields["tva_intra"] = tva_match.group(1).replace(" ", "")
+            raw = re.sub(r'\s', '', tva_match.group(1))
+            if len(raw) == 13:  # FR + 11 chiffres exactement
+                fields["tva_intra"] = raw
+
+    # BIC / SWIFT
+    bic = _find_bic(text)
+    if bic:
+        fields["bic"] = bic
 
     return fields
 
