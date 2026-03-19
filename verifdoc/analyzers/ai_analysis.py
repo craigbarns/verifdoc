@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import time
+from datetime import date
 
 from PIL import Image
 
@@ -30,9 +31,17 @@ _API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 # Taille max de l'image envoyée à Claude (pixels sur le plus grand côté)
 _MAX_IMAGE_DIM = 1500
 
-_SYSTEM_PROMPT = """Tu es un expert en détection de fraude documentaire.
+def _build_system_prompt() -> str:
+    """Construit le prompt système avec la date courante."""
+    today = date.today().strftime("%d/%m/%Y")
+    return f"""Tu es un expert en détection de fraude documentaire.
 Tu analyses des documents administratifs français (bulletins de paie, factures,
 avis d'imposition, RIB, relevés bancaires, quittances de loyer).
+
+IMPORTANT — Date du jour : {today}.
+Utilise cette date comme référence pour juger si les dates du document sont cohérentes.
+Une facture datée du mois en cours ou des mois précédents est NORMALE.
+Ne considère PAS l'année {date.today().year} comme étant dans le futur.
 
 Tu dois fournir une analyse structurée au format JSON STRICT (pas de markdown, pas de commentaires).
 Sois factuel, précis et prudent. Ne fabule pas — si tu n'es pas sûr, dis-le."""
@@ -161,7 +170,7 @@ def analyze(image: Image.Image, ocr_text: str | None = None) -> dict:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=2000,
-            system=_SYSTEM_PROMPT,
+            system=_build_system_prompt(),
             messages=[
                 {
                     "role": "user",

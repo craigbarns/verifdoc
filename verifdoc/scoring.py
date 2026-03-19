@@ -223,6 +223,15 @@ def compute_final_score(results: dict[str, dict], doc_type: str | None = None) -
     # Sélectionner les poids adaptés au type de document
     if doc_type is None:
         doc_type = (results.get("cross_check") or {}).get("doc_type")
+
+    # Si l'IA a identifié le type avec haute confiance, utiliser ce type pour les poids aussi
+    _ai = results.get("ai_analysis") or {}
+    _ai_dt = _ai.get("ai_doc_type")
+    _ai_dt_conf = _ai.get("ai_doc_type_confidence", 0) or 0
+    if _ai_dt and float(_ai_dt_conf) >= 0.80 and _ai_dt in WEIGHTS_BY_DOCTYPE:
+        if doc_type not in WEIGHTS_BY_DOCTYPE or float(_ai_dt_conf) >= 0.90:
+            doc_type = _ai_dt
+
     active_weights = WEIGHTS_BY_DOCTYPE.get(doc_type, WEIGHTS)
 
     weighted_sum = 0.0
@@ -321,17 +330,41 @@ def compute_final_score(results: dict[str, dict], doc_type: str | None = None) -
 
     cross = results.get("cross_check") or {}
     doc_type_key = cross.get("doc_type") or "unknown"
-    doc_type_label = DOC_TYPE_LABELS.get(doc_type_key, doc_type_key)
-
-    business = _business_verification_summary(cross)
-    exec_anomalies = _executive_anomalies_line(results, verdict)
 
     # Données IA enrichies
     ai_res = results.get("ai_analysis") or {}
     ai_available = ai_res.get("ai_available", False)
     ai_explanation = ai_res.get("ai_explanation", "")
     ai_doc_type = ai_res.get("ai_doc_type")
+    ai_doc_type_confidence = ai_res.get("ai_doc_type_confidence", 0)
     ai_confidence = ai_res.get("ai_confidence", 0)
+
+    # L'IA override le type de document quand sa confiance dépasse 80%
+    # et que le type OCR est inconnu, "auto", ou différent
+    if (
+        ai_doc_type
+        and ai_doc_type in DOC_TYPE_LABELS
+        and ai_doc_type_confidence is not None
+        and float(ai_doc_type_confidence) >= 0.80
+        and doc_type_key in ("unknown", "auto", "autre", "inconnu")
+    ):
+        doc_type_key = ai_doc_type
+
+    # Aussi override si l'IA a une confiance ≥ 90% et le type OCR est différent
+    # (l'IA voit le document entier, elle est plus fiable pour la classification)
+    if (
+        ai_doc_type
+        and ai_doc_type in DOC_TYPE_LABELS
+        and ai_doc_type_confidence is not None
+        and float(ai_doc_type_confidence) >= 0.90
+        and doc_type_key != ai_doc_type
+    ):
+        doc_type_key = ai_doc_type
+
+    doc_type_label = DOC_TYPE_LABELS.get(doc_type_key, doc_type_key)
+
+    business = _business_verification_summary(cross)
+    exec_anomalies = _executive_anomalies_line(results, verdict)
 
     return {
         "final_score": round(final_score, 3),
