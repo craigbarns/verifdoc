@@ -523,6 +523,29 @@ with st.sidebar:
         st.caption("Les analyses apparaîtront ici.")
 
     st.divider()
+    st.markdown("**📊 Benchmark**")
+    _bench_dir = Path("benchmark_results")
+    _bench_summary = _bench_dir / "summary.json"
+    if _bench_summary.exists():
+        import json as _json
+        _bs = _json.loads(_bench_summary.read_text())
+        _bc1, _bc2 = st.columns(2)
+        _bc1.metric("F1 Score", f"{_bs.get('f1', 0):.1%}")
+        _bc2.metric("AUC", f"{_bs.get('auc', 0):.3f}")
+        st.caption(f"Dernière exécution : {str(_bs.get('timestamp', ''))[:16]}")
+        _report_path = _bench_dir / "report.html"
+        if _report_path.exists():
+            with open(_report_path, "r", encoding="utf-8") as _rf:
+                st.download_button(
+                    "📥 Rapport Benchmark",
+                    _rf.read(),
+                    file_name="verifdoc_benchmark_report.html",
+                    mime="text/html",
+                )
+    else:
+        st.caption("Lancez : python benchmark_cli.py --synthetic")
+
+    st.divider()
     st.caption("Offres · Gratuit · Pro · Business + API")
 
 # ── Hero ─────────────────────────────────────────────────────────────────────
