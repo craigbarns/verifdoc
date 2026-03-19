@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import html as html_lib
 import io
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -18,6 +19,23 @@ from pathlib import Path
 
 import streamlit as st
 from PIL import Image
+
+
+# ── Démarrage API FastAPI en arrière-plan ────────────────────────────────────
+def _start_api_server():
+    """Lance l'API FastAPI sur le port 8000 dans un thread séparé."""
+    try:
+        import uvicorn
+        from verifdoc.api.main import app as api_app
+        uvicorn.run(api_app, host="0.0.0.0", port=8000, log_level="warning")
+    except Exception:
+        pass  # Silencieux si uvicorn pas installé ou port déjà pris
+
+
+if "api_started" not in st.session_state:
+    st.session_state.api_started = True
+    t = threading.Thread(target=_start_api_server, daemon=True)
+    t.start()
 
 # ── Page ─────────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -543,6 +561,29 @@ with st.sidebar:
                     file_name="verifdoc_benchmark_report.html",
                     mime="text/html",
                 )
+
+    st.divider()
+    with st.expander("🔌 API REST"):
+        st.markdown("""
+**Endpoints disponibles :**
+
+```
+POST /api/v1/analyze      # Analyse complète (6 couches + IA)
+POST /api/v1/analyze/quick # Analyse rapide (ELA + méta)
+GET  /api/v1/health       # Health check
+GET  /docs                # Swagger UI (documentation)
+```
+
+**Exemple :**
+```bash
+curl -X POST https://VOTRE_URL:8000/api/v1/analyze \\
+  -H "X-API-Key: VOTRE_CLE" \\
+  -F "file=@document.pdf"
+```
+
+**Authentification :** Header `X-API-Key`
+**Rate limit :** 30 req/min par clé
+""")
 
     st.divider()
     st.caption("Offres · Gratuit · Pro · Business + API")
