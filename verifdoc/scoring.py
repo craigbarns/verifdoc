@@ -100,17 +100,43 @@ DOC_TYPE_LABELS = {
 }
 
 
+def _format_siret(siret: str) -> str:
+    """Formate un SIRET pour l’affichage : 537 466 104 00024."""
+    s = siret.replace(" ", "")
+    if len(s) == 14:
+        return f"{s[:3]} {s[3:6]} {s[6:9]} {s[9:]}"
+    return s
+
+
+def _format_siren(siret: str) -> str:
+    """Extrait et formate le SIREN (9 premiers chiffres) : 537 466 104."""
+    s = siret.replace(" ", "")[:9]
+    if len(s) == 9:
+        return f"{s[:3]} {s[3:6]} {s[6:9]}"
+    return s
+
+
+def _format_tva_intra(tva: str) -> str:
+    """Formate un n° TVA intracom : FR 13 537 466 104."""
+    t = tva.replace(" ", "")
+    if len(t) == 13 and t[:2].isalpha():
+        return f"{t[:2]} {t[2:4]} {t[4:7]} {t[7:10]} {t[10:]}"
+    return t
+
+
 def _business_verification_summary(cross: dict) -> dict[str, dict]:
-    """Synthèse lisible pour l’UI métier (SIRET, entreprise, IBAN, BIC, TVA)."""
+    """Synthèse lisible pour l’UI métier (SIREN, SIRET, entreprise, IBAN, BIC, TVA)."""
     out = {
+        "siren": {"status": "absent", "label": "Non détecté sur le document"},
         "siret": {"status": "absent", "label": "Non détecté sur le document"},
         "entreprise": {"status": "n/a", "label": "Pas de SIRET extrait — entreprise non vérifiable"},
+        "tva": {"status": "absent", "label": "Non détectée sur le document"},
         "iban": {"status": "absent", "label": "Non extrait — contrôle structurel impossible"},
         "bic": {"status": "absent", "label": "Non détecté sur le document"},
-        "tva": {"status": "absent", "label": "Non détectée sur le document"},
     }
     if not cross or cross.get("verdict") == "skipped":
-        out["siret"] = {"status": "skipped", "label": "Couche métier non exécutée (OCR désactivé)"}
+        out["siren"] = {"status": "skipped", "label": "Couche métier non exécutée (OCR désactivé)"}
+        out["siret"] = {"status": "skipped", "label": "—"}
         out["iban"] = {"status": "skipped", "label": "—"}
         out["bic"] = {"status": "skipped", "label": "—"}
         out["tva"] = {"status": "skipped", "label": "—"}
@@ -119,82 +145,115 @@ def _business_verification_summary(cross: dict) -> dict[str, dict]:
     ext = cross.get("external_verifications") or {}
     fields = cross.get("fields_extracted") or {}
 
-    # SIRET
-    if fields.get("siret"):
+    siret_raw = fields.get("siret", "")
+
+    # SIRET + SIREN
+    if siret_raw:
         sv = ext.get("siret") or {}
+        siret_fmt = _format_siret(siret_raw)
+        siren_fmt = _format_siren(siret_raw)
+
         if sv.get("verified") is True:
-            out["siret"] = {"status": "ok", "label": "Numéro valide (référentiel officiel)"}
             nom = sv.get("company_name") or ""
+            status_line = sv.get("status") or ""
+            out["siren"] = {
+                "status": "ok",
+                "label": f"{siren_fmt} — entreprise vérifiée",
+                "detail": nom.strip() or "",
+            }
+            out["siret"] = {
+                "status": "ok",
+                "label": f"{siret_fmt} — établissement actif",
+            }
             out["entreprise"] = {
                 "status": "found",
                 "label": nom.strip() or "Entreprise trouvée",
                 "detail": sv.get("address") or "",
-                "status_line": sv.get("status") or "",
+                "status_line": status_line,
             }
         elif sv.get("verified") is False:
-            out["siret"] = {"status": "invalid", "label": "Invalide ou introuvable (référentiel)"}
+            out["siren"] = {"status": "invalid", "label": f"{siren_fmt} — introuvable au registre"}
+            out["siret"] = {"status": "invalid", "label": f"{siret_fmt} — invalide ou introuvable"}
             out["entreprise"] = {"status": "not_found", "label": "Aucune entreprise active associée"}
         elif sv.get("verified") is None:
             luhn_invalid = any(
                 f.get("type") == "siret_invalide" for f in cross.get("flags", [])
             )
             if luhn_invalid:
+                out["siren"] = {"status": "invalid", "label": f"{siren_fmt} — clé de contrôle invalide"}
                 out["siret"] = {
                     "status": "invalid",
-                    "label": "Clé de contrôle SIRET invalide (Luhn) — registre non joignable",
+                    "label": f"{siret_fmt} — clé Luhn invalide, registre non joignable",
                 }
                 out["entreprise"] = {
                     "status": "warn",
                     "label": "Exiger un justificatif ou un autre SIRET avant validation",
                 }
             else:
-                out["siret"] = {"status": "unavailable", "label": "Vérification registre indisponible (API)"}
+                out["siren"] = {"status": "unavailable", "label": f"{siren_fmt} — registre indisponible"}
+                out["siret"] = {"status": "unavailable", "label": f"{siret_fmt} — vérification impossible (API)"}
                 out["entreprise"] = {"status": "unknown", "label": "Non vérifiable pour l’instant"}
         else:
-            out["siret"] = {"status": "unknown", "label": "État de vérification inconnu"}
+            out["siren"] = {"status": "unknown", "label": f"{siren_fmt}"}
+            out["siret"] = {"status": "unknown", "label": f"{siret_fmt} — état inconnu"}
     else:
         for f in cross.get("flags", []):
             if f.get("type") == "siret_invalide":
+                out["siren"] = {"status": "invalid", "label": "Format ou clé incohérente"}
                 out["siret"] = {"status": "invalid", "label": "Format ou clé incohérente"}
                 break
 
-    # IBAN
-    if fields.get("iban"):
-        iv = ext.get("iban") or {}
-        if iv.get("valid") is True:
-            out["iban"] = {"status": "ok", "label": "Structure cohérente (modulo 97)"}
-            if iv.get("bank_name"):
-                out["iban"]["detail"] = iv["bank_name"]
-        elif iv.get("valid") is False:
-            out["iban"] = {"status": "invalid", "label": "Structure incohérente"}
+    # TVA intracommunautaire — affiché après SIREN car lié à l’entreprise
+    tva_raw = fields.get("tva_intra", "")
+    if tva_raw:
+        tv = ext.get("tva") or {}
+        tva_fmt = _format_tva_intra(tva_raw)
+        if tv.get("valid") is True:
+            siren_tva = tv.get("siren", "")
+            out["tva"] = {
+                "status": "ok",
+                "label": f"{tva_fmt} — valide",
+                "detail": f"Cohérent avec le SIREN {siren_tva}" if siren_tva else "",
+            }
+        elif tv.get("valid") is False:
+            out["tva"] = {"status": "invalid", "label": f"{tva_fmt} — clé TVA incohérente"}
         else:
-            out["iban"] = {"status": "unverifiable", "label": "Non vérifiable"}
+            out["tva"] = {"status": "unverifiable", "label": f"{tva_fmt} — non vérifiable"}
+    else:
+        out["tva"] = {"status": "absent", "label": "Non détectée sur le document"}
+
+    # IBAN
+    iban_raw = fields.get("iban", "")
+    if iban_raw:
+        iv = ext.get("iban") or {}
+        # Formater l’IBAN pour l’affichage : FR76 1130 6000 ...
+        iban_fmt = " ".join(iban_raw[i:i+4] for i in range(0, len(iban_raw), 4))
+        if iv.get("valid") is True:
+            bank_code = iv.get("bank_code", "")
+            bank_name = iv.get("bank_name", "")
+            detail = bank_name or (f"Banque {bank_code}" if bank_code else "")
+            out["iban"] = {"status": "ok", "label": f"{iban_fmt} — valide (mod 97)"}
+            if detail:
+                out["iban"]["detail"] = detail
+        elif iv.get("valid") is False:
+            out["iban"] = {"status": "invalid", "label": f"{iban_fmt} — structure incohérente"}
+        else:
+            out["iban"] = {"status": "unverifiable", "label": f"{iban_fmt} — non vérifiable"}
     else:
         out["iban"] = {"status": "absent", "label": "Non extrait du document"}
 
     # BIC
     if fields.get("bic"):
+        bic_val = fields["bic"]
         bic_invalid = any(
             f.get("type") == "bic_invalide" for f in cross.get("flags", [])
         )
         if bic_invalid:
-            out["bic"] = {"status": "invalid", "label": f"BIC invalide ({fields['bic']})"}
+            out["bic"] = {"status": "invalid", "label": f"{bic_val} — invalide"}
         else:
-            out["bic"] = {"status": "ok", "label": f"Format valide ({fields['bic']})"}
+            out["bic"] = {"status": "ok", "label": f"{bic_val} — valide"}
     else:
         out["bic"] = {"status": "absent", "label": "Non détecté sur le document"}
-
-    # TVA intracom
-    if fields.get("tva_intra"):
-        tv = ext.get("tva") or {}
-        if tv.get("valid") is True:
-            out["tva"] = {"status": "ok", "label": "Cohérente avec le SIREN attendu"}
-        elif tv.get("valid") is False:
-            out["tva"] = {"status": "invalid", "label": "Incohérente (clé TVA)"}
-        else:
-            out["tva"] = {"status": "unverifiable", "label": "Non vérifiable"}
-    else:
-        out["tva"] = {"status": "absent", "label": "Non détectée sur le document"}
 
     return out
 

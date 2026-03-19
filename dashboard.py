@@ -175,7 +175,7 @@ def _build_html_report(
     )
     biz = final.get("business_verification") or {}
     biz_rows = ""
-    for key, title in [("siret", "SIRET"), ("entreprise", "Entreprise"), ("iban", "IBAN"), ("bic", "BIC"), ("tva", "TVA intracom")]:
+    for key, title in [("siren", "SIREN"), ("siret", "SIRET"), ("entreprise", "Entreprise"), ("tva", "TVA intracom"), ("iban", "IBAN"), ("bic", "BIC")]:
         b = biz.get(key) or {}
         biz_rows += (
             f"<tr><td><strong>{title}</strong></td><td>{html_lib.escape(b.get('label', '—'))}</td></tr>"
@@ -943,18 +943,34 @@ if "vd_last" in st.session_state:
     # ── Tab 1 : Couche métier ──────────────────────────────────────────────
     with tab_biz:
         biz = final.get("business_verification") or {}
+        b_siren = biz.get("siren") or {}
         b_siret = biz.get("siret") or {}
         b_ent = biz.get("entreprise") or {}
+        b_tva = biz.get("tva") or {}
         b_iban = biz.get("iban") or {}
         b_bic = biz.get("bic") or {}
-        b_tva = biz.get("tva") or {}
+
+        # ── Identité entreprise (SIREN + SIRET + Entreprise + TVA) ──
+        st.markdown('<p class="vd-section-title">Identité entreprise</p>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
+            st.markdown(
+                f'<div class="vd-biz-card {_biz_card_class(b_siren.get("status", ""))}">'
+                f'<div class="biz-k">SIREN</div><div class="biz-v">{html_lib.escape(b_siren.get("label", "—"))}</div>'
+                + (
+                    f'<div class="biz-d">{html_lib.escape(str(b_siren.get("detail", "")))}</div>'
+                    if b_siren.get("detail")
+                    else ""
+                )
+                + "</div>",
+                unsafe_allow_html=True,
+            )
             st.markdown(
                 f'<div class="vd-biz-card {_biz_card_class(b_siret.get("status", ""))}">'
                 f'<div class="biz-k">SIRET</div><div class="biz-v">{html_lib.escape(b_siret.get("label", "—"))}</div></div>',
                 unsafe_allow_html=True,
             )
+        with c2:
             st.markdown(
                 f'<div class="vd-biz-card {_biz_card_class(b_ent.get("status", ""))}">'
                 f'<div class="biz-k">Entreprise (référentiel)</div><div class="biz-v">{html_lib.escape(b_ent.get("label", "—"))}</div>'
@@ -966,7 +982,22 @@ if "vd_last" in st.session_state:
                 + "</div>",
                 unsafe_allow_html=True,
             )
-        with c2:
+            st.markdown(
+                f'<div class="vd-biz-card {_biz_card_class(b_tva.get("status", ""))}">'
+                f'<div class="biz-k">TVA intracommunautaire</div><div class="biz-v">{html_lib.escape(b_tva.get("label", "—"))}</div>'
+                + (
+                    f'<div class="biz-d">{html_lib.escape(str(b_tva.get("detail", "")))}</div>'
+                    if b_tva.get("detail")
+                    else ""
+                )
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+
+        # ── Coordonnées bancaires (IBAN + BIC) ──
+        st.markdown('<p class="vd-section-title">Coordonnées bancaires</p>', unsafe_allow_html=True)
+        c3, c4 = st.columns(2)
+        with c3:
             st.markdown(
                 f'<div class="vd-biz-card {_biz_card_class(b_iban.get("status", ""))}">'
                 f'<div class="biz-k">IBAN</div><div class="biz-v">{html_lib.escape(b_iban.get("label", "—"))}</div>'
@@ -978,14 +1009,10 @@ if "vd_last" in st.session_state:
                 + "</div>",
                 unsafe_allow_html=True,
             )
+        with c4:
             st.markdown(
                 f'<div class="vd-biz-card {_biz_card_class(b_bic.get("status", ""))}">'
                 f'<div class="biz-k">BIC / SWIFT</div><div class="biz-v">{html_lib.escape(b_bic.get("label", "—"))}</div></div>',
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                f'<div class="vd-biz-card {_biz_card_class(b_tva.get("status", ""))}">'
-                f'<div class="biz-k">TVA intracommunautaire</div><div class="biz-v">{html_lib.escape(b_tva.get("label", "—"))}</div></div>',
                 unsafe_allow_html=True,
             )
 
