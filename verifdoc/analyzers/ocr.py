@@ -173,12 +173,60 @@ def _find_iban(text: str) -> str | None:
 
 
 def _find_bic(text: str) -> str | None:
-    """Cherche un code BIC/SWIFT dans le texte."""
-    match = re.search(r'\b([A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?)\b', text.upper())
-    if match:
-        bic = match.group(1)
-        if 8 <= len(bic) <= 11:
+    """Cherche un code BIC/SWIFT dans le texte.
+
+    Stratégie en 2 passes :
+    1. Chercher un code près du mot-clé BIC/SWIFT (fiable)
+    2. Fallback regex générique MAIS avec validation du code pays ISO
+       pour éviter d'attraper des mots courants (ex: "OLIVIERS")
+    """
+    text_upper = text.upper()
+
+    # Codes pays ISO 3166-1 alpha-2 les plus courants (positions 5-6 du BIC)
+    _VALID_COUNTRY_CODES = {
+        "FR", "DE", "GB", "ES", "IT", "PT", "NL", "BE", "CH", "AT", "LU",
+        "IE", "US", "CA", "JP", "AU", "SE", "DK", "NO", "FI", "PL", "CZ",
+        "GR", "HU", "RO", "BG", "HR", "SK", "SI", "LT", "LV", "EE", "MT",
+        "CY", "MC", "AD", "LI", "SM", "VA", "MA", "TN", "SN", "CI", "CM",
+        "GA", "MU", "MG", "RE", "GP", "MQ", "GF", "NC", "PF", "BJ", "BF",
+    }
+
+    # Mots français courants de 8+ lettres à exclure (faux positifs fréquents)
+    _EXCLUDED_WORDS = {
+        "OLIVIERS", "BANCAIRE", "PAIEMENT", "MONTANTS", "FACTURES",
+        "ADRESSES", "COMMERCE", "DOCUMENT", "RELIQUES", "COMPTES",
+        "MENTIONS", "SERVICES", "STANDARD", "INTERNET", "PRODUITS",
+        "ENSEMBLE", "COMMANDE", "LIVRAISO", "CONDUITS", "VERSEMEN",
+        "DOMICILE", "IDENTITE", "HABITANT", "EXERCICE", "CONSOMMA",
+        "PRESTATI", "TRAVAILL", "FONCTION", "SALAIRES", "ALLOCATI",
+    }
+
+    bic_pattern = r'\b([A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?)\b'
+
+    # Pass 1 : près d'un mot-clé BIC/SWIFT (très fiable)
+    keyword_match = re.search(
+        r'(?:BIC|SWIFT|CODE\s*BIC|CODE\s*SWIFT)\s*[:\s]*([A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?)\b',
+        text_upper,
+    )
+    if keyword_match:
+        bic = keyword_match.group(1)
+        if 8 <= len(bic) <= 11 and bic not in _EXCLUDED_WORDS:
             return bic
+
+    # Pass 2 : regex générique + validation structurelle
+    for match in re.finditer(bic_pattern, text_upper):
+        bic = match.group(1)
+        if len(bic) < 8 or len(bic) > 11:
+            continue
+        # Exclure les mots français courants
+        if bic in _EXCLUDED_WORDS:
+            continue
+        # Vérifier que les positions 5-6 sont un code pays ISO valide
+        country = bic[4:6]
+        if country not in _VALID_COUNTRY_CODES:
+            continue
+        return bic
+
     return None
 
 

@@ -175,7 +175,7 @@ def _build_html_report(
     )
     biz = final.get("business_verification") or {}
     biz_rows = ""
-    for key, title in [("siret", "SIRET"), ("entreprise", "Entreprise"), ("iban", "IBAN"), ("tva", "TVA intracom")]:
+    for key, title in [("siret", "SIRET"), ("entreprise", "Entreprise"), ("iban", "IBAN"), ("bic", "BIC"), ("tva", "TVA intracom")]:
         b = biz.get(key) or {}
         biz_rows += (
             f"<tr><td><strong>{title}</strong></td><td>{html_lib.escape(b.get('label', '—'))}</td></tr>"
@@ -522,11 +522,12 @@ with st.sidebar:
     else:
         st.caption("Les analyses apparaîtront ici.")
 
-    st.divider()
-    st.markdown("**📊 Benchmark**")
+    # Benchmark : affiché uniquement si des résultats existent localement (dev)
     _bench_dir = Path("benchmark_results")
     _bench_summary = _bench_dir / "summary.json"
     if _bench_summary.exists():
+        st.divider()
+        st.markdown("**📊 Benchmark**")
         import json as _json
         _bs = _json.loads(_bench_summary.read_text())
         _bc1, _bc2 = st.columns(2)
@@ -542,8 +543,6 @@ with st.sidebar:
                     file_name="verifdoc_benchmark_report.html",
                     mime="text/html",
                 )
-    else:
-        st.caption("Lancez : python benchmark_cli.py --synthetic")
 
     st.divider()
     st.caption("Offres · Gratuit · Pro · Business + API")
@@ -947,6 +946,7 @@ if "vd_last" in st.session_state:
         b_siret = biz.get("siret") or {}
         b_ent = biz.get("entreprise") or {}
         b_iban = biz.get("iban") or {}
+        b_bic = biz.get("bic") or {}
         b_tva = biz.get("tva") or {}
         c1, c2 = st.columns(2)
         with c1:
@@ -976,6 +976,11 @@ if "vd_last" in st.session_state:
                     else ""
                 )
                 + "</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f'<div class="vd-biz-card {_biz_card_class(b_bic.get("status", ""))}">'
+                f'<div class="biz-k">BIC / SWIFT</div><div class="biz-v">{html_lib.escape(b_bic.get("label", "—"))}</div></div>',
                 unsafe_allow_html=True,
             )
             st.markdown(

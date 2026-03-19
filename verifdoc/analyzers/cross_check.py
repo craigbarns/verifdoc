@@ -94,12 +94,49 @@ def validate_iban(iban: str) -> dict:
     }
 
 
-def validate_bic(bic: str) -> dict:
-    """Vérifie le format d'un code BIC/SWIFT."""
+def validate_bic(bic: str, iban: str | None = None) -> dict:
+    """Vérifie le format d'un code BIC/SWIFT + cohérence avec l'IBAN.
+
+    Structure BIC (ISO 9362) :
+    - Positions 1-4 : code banque (lettres)
+    - Positions 5-6 : code pays ISO 3166-1 alpha-2
+    - Positions 7-8 : code localisation (lettres ou chiffres)
+    - Positions 9-11 : code branche (optionnel)
+    """
     clean = bic.replace(" ", "").upper()
-    if re.match(r'^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$', clean):
-        return {"valid": True, "detail": "BIC valide"}
-    return {"valid": False, "detail": "Format BIC invalide"}
+
+    # Format de base
+    if not re.match(r'^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$', clean):
+        return {"valid": False, "detail": "Format BIC invalide"}
+
+    # Vérifier le code pays (positions 5-6)
+    _VALID_COUNTRY_CODES = {
+        "FR", "DE", "GB", "ES", "IT", "PT", "NL", "BE", "CH", "AT", "LU",
+        "IE", "US", "CA", "JP", "AU", "SE", "DK", "NO", "FI", "PL", "CZ",
+        "GR", "HU", "RO", "BG", "HR", "SK", "SI", "LT", "LV", "EE", "MT",
+        "CY", "MC", "AD", "LI", "SM", "VA", "MA", "TN", "SN", "CI", "CM",
+        "GA", "MU", "MG", "RE", "GP", "MQ", "GF", "NC", "PF", "BJ", "BF",
+    }
+    country = clean[4:6]
+    if country not in _VALID_COUNTRY_CODES:
+        return {
+            "valid": False,
+            "detail": f"Code pays BIC '{country}' non reconnu — probablement pas un vrai BIC",
+        }
+
+    # Cohérence BIC ↔ IBAN : les codes pays doivent correspondre
+    if iban:
+        iban_country = iban.replace(" ", "").upper()[:2]
+        if country != iban_country:
+            return {
+                "valid": False,
+                "detail": (
+                    f"BIC incohérent avec l'IBAN — pays BIC : {country}, "
+                    f"pays IBAN : {iban_country}"
+                ),
+            }
+
+    return {"valid": True, "detail": "BIC valide"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -334,6 +371,14 @@ def validate_facture(fields: dict) -> dict:
             flags.append({"type": "iban_invalide", "severity": "high", "detail": r["detail"]})
             score += 0.35
 
+    # BIC
+    bic = fields.get("bic")
+    if bic:
+        r = validate_bic(bic, iban=iban)
+        if not r["valid"]:
+            flags.append({"type": "bic_invalide", "severity": "medium", "detail": r["detail"]})
+            score += 0.20
+
     # Numéro de facture manquant (obligatoire en France)
     if not numero:
         flags.append({"type": "numero_manquant", "severity": "medium",
@@ -373,9 +418,9 @@ def validate_rib(fields: dict) -> dict:
         flags.append({"type": "iban_absent", "severity": "medium", "detail": "IBAN non détecté sur le RIB"})
         score += 0.15
 
-    # BIC
+    # BIC (avec vérification cohérence pays IBAN ↔ BIC)
     if bic:
-        r = validate_bic(bic)
+        r = validate_bic(bic, iban=iban)
         if not r["valid"]:
             flags.append({"type": "bic_invalide", "severity": "medium", "detail": r["detail"]})
             score += 0.20

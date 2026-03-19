@@ -101,16 +101,18 @@ DOC_TYPE_LABELS = {
 
 
 def _business_verification_summary(cross: dict) -> dict[str, dict]:
-    """Synthèse lisible pour l’UI métier (SIRET, entreprise, IBAN, TVA)."""
+    """Synthèse lisible pour l’UI métier (SIRET, entreprise, IBAN, BIC, TVA)."""
     out = {
         "siret": {"status": "absent", "label": "Non détecté sur le document"},
         "entreprise": {"status": "n/a", "label": "Pas de SIRET extrait — entreprise non vérifiable"},
         "iban": {"status": "absent", "label": "Non extrait — contrôle structurel impossible"},
+        "bic": {"status": "absent", "label": "Non détecté sur le document"},
         "tva": {"status": "absent", "label": "Non détectée sur le document"},
     }
     if not cross or cross.get("verdict") == "skipped":
         out["siret"] = {"status": "skipped", "label": "Couche métier non exécutée (OCR désactivé)"}
         out["iban"] = {"status": "skipped", "label": "—"}
+        out["bic"] = {"status": "skipped", "label": "—"}
         out["tva"] = {"status": "skipped", "label": "—"}
         return out
 
@@ -169,6 +171,18 @@ def _business_verification_summary(cross: dict) -> dict[str, dict]:
             out["iban"] = {"status": "unverifiable", "label": "Non vérifiable"}
     else:
         out["iban"] = {"status": "absent", "label": "Non extrait du document"}
+
+    # BIC
+    if fields.get("bic"):
+        bic_invalid = any(
+            f.get("type") == "bic_invalide" for f in cross.get("flags", [])
+        )
+        if bic_invalid:
+            out["bic"] = {"status": "invalid", "label": f"BIC invalide ({fields['bic']})"}
+        else:
+            out["bic"] = {"status": "ok", "label": f"Format valide ({fields['bic']})"}
+    else:
+        out["bic"] = {"status": "absent", "label": "Non détecté sur le document"}
 
     # TVA intracom
     if fields.get("tva_intra"):
