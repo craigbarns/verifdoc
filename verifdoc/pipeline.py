@@ -119,8 +119,10 @@ def _run_ocr_cross(
         ocr_result = ocr_module.extract_text(
             image, languages=languages, pdf_path=pdf_path if pdf_path else None
         )
+        full_text = ocr_result.get("full_text", "")
         ocr_summary = {
-            "full_text": ocr_result.get("full_text", "")[:500],
+            "full_text": full_text[:500],  # Résumé tronqué pour l'UI
+            "full_text_complete": full_text,  # Texte complet pour l'IA
             "avg_confidence": ocr_result.get("avg_confidence", 0),
             "word_count": len(ocr_result.get("words", [])),
         }
@@ -168,10 +170,10 @@ def _run_all_parallel(
 
     def _task_ocr_cross():
         result = _run_ocr_cross(image, pdf_path, doc_type, languages, run_ocr)
-        # Capturer le texte OCR pour l'IA (si dispo)
+        # Capturer le texte OCR complet pour l'IA
         ocr_block = result[0]
-        if "ocr" in ocr_block and "full_text" in ocr_block["ocr"]:
-            ocr_text_holder[0] = ocr_block["ocr"]["full_text"]
+        ocr_data = ocr_block.get("ocr", {})
+        ocr_text_holder[0] = ocr_data.get("full_text_complete") or ocr_data.get("full_text")
         return result
 
     with ThreadPoolExecutor(max_workers=6) as ex:
@@ -183,11 +185,8 @@ def _run_all_parallel(
         }
         if run_ocr:
             futures[ex.submit(_task_ocr_cross)] = "ocr"
-        if ai_enabled:
-            # L'IA démarre en parallèle — elle recevra le texte OCR si disponible
-            # mais fonctionne aussi sans (vision seule)
-            futures[ex.submit(_task_ai_analysis, image, None)] = "ai"
 
+        # Phase 1 : forensiques + OCR en parallèle
         for fut in as_completed(futures):
             task_type = futures[fut]
             if task_type == "forensic":
@@ -198,15 +197,29 @@ def _run_all_parallel(
             elif task_type == "ocr":
                 ocr_block, _ = fut.result()
                 results.update(ocr_block)
-            elif task_type == "ai":
-                _, ai_res, _ = fut.result()
-                results["ai_analysis"] = ai_res
             done_count += 1
             if progress_callback:
                 try:
                     progress_callback(done_count, total_tasks)
                 except Exception:
                     pass
+
+        # Phase 2 : IA APRÈS l'OCR pour bénéficier du texte extrait
+        if ai_enabled:
+            ocr_text = ocr_text_holder[0]
+            ai_fut = ex.submit(_task_ai_analysis, image, ocr_text)
+            _, ai_res, _ = ai_fut.result()
+            results["ai_analysis"] = ai_res
+            done_count += 1
+            if progress_callback:
+                try:
+                    progress_callback(done_count, total_tasks)
+                except Exception:
+                    pass
+
+    # Nettoyer le texte complet de la réponse (pas utile côté client)
+    if "ocr" in results and "full_text_complete" in results["ocr"]:
+        del results["ocr"]["full_text_complete"]
 
     # Si OCR désactivé, ajouter le bloc skipped
     if not run_ocr and "cross_check" not in results:
